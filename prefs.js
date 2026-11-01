@@ -12,12 +12,9 @@
 
 import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk';
-import Gdk from 'gi://Gdk';
-import Gio from 'gi://Gio';
-import GLib from 'gi://GLib';
 import Adw from 'gi://Adw';
 
-import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
+import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

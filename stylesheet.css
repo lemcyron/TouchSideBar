@@ -86,3 +86,11 @@
 .touch-sidebar-resize-handle:active {
     background-color: rgba(120, 170, 255, 0.85);
 }
+
+/* ── Edge swipe zone ──────────────────────────────────────────── */
+/* Invisible by design (opacity:0 set in JS). The style is here   */
+/* only so GNOME doesn't log a missing-class warning.             */
+.touch-sidebar-swipe-zone {
+    background-color: transparent;
+    width: 8px;
+}

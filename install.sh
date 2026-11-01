@@ -5,6 +5,9 @@
 # Compiles the GSettings schema and installs the extension into
 # ~/.local/share/gnome-shell/extensions/touchsidebar@gnome-extension
 #
+# IMPORTANT: GNOME Shell must be restarted after installation
+# before the extension can be enabled. See instructions below.
+#
 # Usage:
 #   chmod +x install.sh
 #   ./install.sh
@@ -33,14 +36,31 @@ cp schemas/org.gnome.shell.extensions.touchsidebar.gschema.xml "$SCHEMA_DIR/"
 echo "→ Compiling GSettings schema…"
 glib-compile-schemas "$SCHEMA_DIR"
 
-echo "→ Enabling extension…"
-gnome-extensions enable "$UUID" 2>/dev/null || true
+echo ""
+echo "✔ Files installed to: $INSTALL_DIR"
+echo ""
+echo "══════════════════════════════════════════════════════════"
+echo "  NEXT STEP — Restart GNOME Shell first, THEN enable:"
+echo "══════════════════════════════════════════════════════════"
+echo ""
+echo "  ┌─ On X11 (e.g. GNOME on Xorg):"
+echo "  │   Press Alt+F2, type  r  and press Enter."
+echo "  │   Then run:  gnome-extensions enable $UUID"
+echo "  │"
+echo "  └─ On Wayland (e.g. GNOME on Wayland / most modern installs):"
+echo "      Log out and log back in."
+echo "      Then run:  gnome-extensions enable $UUID"
+echo ""
+echo "  After enabling, open Preferences with:"
+echo "      gnome-extensions prefs $UUID"
+echo ""
+echo "  To verify the extension loaded:"
+echo "      gnome-extensions list --enabled | grep $UUID"
+echo ""
 
-echo ""
-echo "✔ TouchSideBar installed successfully."
-echo ""
-echo "  If GNOME Shell is already running, press Alt+F2, type 'r', and press"
-echo "  Enter to restart the shell (X11 only). On Wayland, log out and back in."
-echo ""
-echo "  To open Preferences:"
-echo "    gnome-extensions prefs $UUID"
+# ── Attempt to enable right now (only works if running inside an active session
+#    that has already restarted since the files were placed here — e.g. re-running
+#    install.sh after a restart). Silently skipped if the shell hasn't reloaded yet.
+if gnome-extensions enable "$UUID" 2>/dev/null; then
+    echo "  ✔ Extension enabled in the current session."
+fi

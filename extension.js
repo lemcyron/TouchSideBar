@@ -319,10 +319,17 @@ class TouchSideBar extends St.BoxLayout {
         });
 
         // ── Window overlap detection ──────────────────────────
-        this._windowCreatedId = global.display.connect('window-created', () => this._checkOverlap());
+        this._windowCreatedId = global.display.connect('window-created', (_display, win) => {
+            this._trackWindow(win);
+            this._checkOverlap();
+        });
         this._windowFocusId = global.display.connect('notify::focus-window', () => this._checkOverlap());
         this._workspaceChangedId = global.workspaceManager.connect(
-            'active-workspace-changed', () => this._checkOverlap());
+            'active-workspace-changed', () => {
+                this._untrackWindows();
+                this._trackAllWindows();
+                this._checkOverlap();
+            });
 
         // Watch all windows for geometry changes
         this._windowSignals = [];
@@ -389,7 +396,8 @@ class TouchSideBar extends St.BoxLayout {
 
         const onRight = this._settings.get_boolean('sidebar-on-right');
         const w = this._currentWidth;
-        const panelHeight = Main.panel.actor ? Main.panel.actor.get_height() : 32;
+        // GNOME 45+: Main.panel is the actor itself (no .actor wrapper)
+        const panelHeight = Main.panel.get_height() || 32;
 
         this.set_position(
             onRight ? monitor.x + monitor.width - w : monitor.x,
@@ -434,7 +442,7 @@ class TouchSideBar extends St.BoxLayout {
 
         const onRight = this._settings.get_boolean('sidebar-on-right');
         const w = this._currentWidth;
-        const panelHeight = Main.panel.actor ? Main.panel.actor.get_height() : 32;
+        const panelHeight = Main.panel.get_height() || 32;
 
         const sidebarRect = {
             x: onRight ? monitor.x + monitor.width - w : monitor.x,
@@ -603,6 +611,110 @@ class TouchSideBarIndicator extends PanelMenu.Button {
     }
 });
 
+// ─── Edge Swipe Zone ───────────────────────────────────────────────────────────
+//
+// An invisible 8 px strip anchored to the screen edge (same side as the
+// sidebar). Dragging / swiping inward from this strip shows the sidebar.
+// Works with both mouse pointer-press/motion and touch TOUCH_BEGIN/UPDATE events.
+
+const SWIPE_THRESHOLD = 20; // px inward travel needed to trigger reveal
+
+const EdgeSwipeZone = GObject.registerClass(
+class EdgeSwipeZone extends St.Button {
+    _init(settings, sidebar) {
+        super._init({
+            style_class: 'touch-sidebar-swipe-zone',
+            reactive: true,
+            can_focus: false,
+            opacity: 0,          // fully transparent — invisible but interactive
+            width: 8,
+        });
+
+        this._settings = settings;
+        this._sidebar = sidebar;
+        this._dragging = false;
+        this._startX = 0;
+        this._triggered = false;
+
+        this.connect('button-press-event', this._onPress.bind(this));
+        this.connect('button-release-event', this._onRelease.bind(this));
+        this.connect('motion-event', this._onMotion.bind(this));
+        this.connect('touch-event', this._onTouch.bind(this));
+
+        settings.connect('changed::sidebar-on-right', () => this._reposition());
+        settings.connect('changed::sidebar-width', () => this._reposition());
+    }
+
+    _reposition() {
+        const monitor = Main.layoutManager.primaryMonitor;
+        if (!monitor) return;
+        const onRight = this._settings.get_boolean('sidebar-on-right');
+        const panelHeight = Main.panel.get_height() || 32;
+        this.set_size(8, monitor.height - panelHeight);
+        this.set_position(
+            onRight ? monitor.x + monitor.width - 8 : monitor.x,
+            monitor.y + panelHeight
+        );
+    }
+
+    _onPress(actor, event) {
+        this._dragging = true;
+        this._triggered = false;
+        this._startX = event.get_coords()[0];
+        return Clutter.EVENT_STOP;
+    }
+
+    _onRelease() {
+        this._dragging = false;
+        return Clutter.EVENT_STOP;
+    }
+
+    _onMotion(actor, event) {
+        if (!this._dragging || this._triggered) return Clutter.EVENT_PROPAGATE;
+        const [cx] = event.get_coords();
+        const onRight = this._settings.get_boolean('sidebar-on-right');
+        const delta = onRight ? this._startX - cx : cx - this._startX;
+        if (delta >= SWIPE_THRESHOLD) {
+            this._triggered = true;
+            this._revealSidebar();
+        }
+        return Clutter.EVENT_STOP;
+    }
+
+    _onTouch(actor, event) {
+        const type = event.type();
+        if (type === Clutter.EventType.TOUCH_BEGIN) {
+            this._dragging = true;
+            this._triggered = false;
+            this._startX = event.get_coords()[0];
+            return Clutter.EVENT_STOP;
+        }
+        if (type === Clutter.EventType.TOUCH_END || type === Clutter.EventType.TOUCH_CANCEL) {
+            this._dragging = false;
+            return Clutter.EVENT_STOP;
+        }
+        if (type === Clutter.EventType.TOUCH_UPDATE && this._dragging && !this._triggered) {
+            const [cx] = event.get_coords();
+            const onRight = this._settings.get_boolean('sidebar-on-right');
+            const delta = onRight ? this._startX - cx : cx - this._startX;
+            if (delta >= SWIPE_THRESHOLD) {
+                this._triggered = true;
+                this._revealSidebar();
+            }
+            return Clutter.EVENT_STOP;
+        }
+        return Clutter.EVENT_PROPAGATE;
+    }
+
+    _revealSidebar() {
+        // Show the sidebar if it's currently hidden
+        if (!this._sidebar.visible || this._sidebar.opacity === 0) {
+            this._sidebar._visible = false; // force showSidebar to run
+            this._sidebar._showSidebar();
+        }
+    }
+});
+
 // ─── Extension Entry Point ─────────────────────────────────────────────────────
 
 export default class TouchSideBarExtension extends Extension {
@@ -618,6 +730,21 @@ export default class TouchSideBarExtension extends Extension {
         this._sidebar._positionSidebar();
         this._sidebar._checkOverlap();
 
+        // ── Edge swipe zone ───────────────────────────────────
+        // Placed above sidebar in the chrome stack so it catches
+        // touches/drags that start from the very edge of the screen.
+        this._swipeZone = new EdgeSwipeZone(this._settings, this._sidebar);
+        Main.layoutManager.addChrome(this._swipeZone, {
+            affectsStruts: false,
+            trackFullscreen: false,
+        });
+        this._swipeZone._reposition();
+
+        // Keep swipe zone repositioned alongside sidebar
+        this._swipeSideId = this._settings.connect('changed::sidebar-on-right', () => {
+            this._swipeZone._reposition();
+        });
+
         // ── Panel indicator ───────────────────────────────────
         this._indicator = new TouchSideBarIndicator(this._sidebar, this._settings);
         this._indicator.setExtension(this);
@@ -628,6 +755,7 @@ export default class TouchSideBarExtension extends Extension {
             'monitors-changed', () => {
                 this._sidebar._positionSidebar();
                 this._sidebar._checkOverlap();
+                this._swipeZone._reposition();
             }
         );
 
@@ -646,9 +774,17 @@ export default class TouchSideBarExtension extends Extension {
             this._settings.disconnect(this._sideChangedId);
             this._sideChangedId = null;
         }
+        if (this._swipeSideId) {
+            this._settings.disconnect(this._swipeSideId);
+            this._swipeSideId = null;
+        }
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = null;
+        }
+        if (this._swipeZone) {
+            this._swipeZone.destroy();
+            this._swipeZone = null;
         }
         if (this._sidebar) {
             this._sidebar.destroy();

@@ -58,7 +58,16 @@ chmod +x install.sh
 ./install.sh
 ```
 
-On **X11**: press `Alt+F2`, type `r`, press `Enter` to restart the shell.  
+> **Important:** GNOME Shell must be **restarted** before the extension can be
+> enabled. The install script copies and compiles all files, but cannot activate
+> the extension in the same session.
+
+After restarting the shell:
+```bash
+gnome-extensions enable touchsidebar@gnome-extension
+```
+
+On **X11**: press `Alt+F2`, type `r`, press `Enter` to restart the shell.
 On **Wayland**: log out and back in.
 
 ### Manual installation
