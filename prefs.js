@@ -14,7 +14,7 @@ import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk';
 import Adw from 'gi://Adw';
 
-import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/shell/extensions/prefs.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -138,12 +138,14 @@ const ActionRow = GObject.registerClass({
             this._action.iconColor = colorEntry.get_text();
             this.emit('changed');
         });
-        const colorButton = new Gtk.ColorButton({
+        const colorDialog = new Gtk.ColorDialog({ title: _('Pick a color'), with_alpha: false });
+        const colorButton = new Gtk.ColorDialogButton({
             valign: Gtk.Align.CENTER,
             tooltip_text: _('Pick a color'),
+            dialog: colorDialog,
         });
         // Sync color button → entry
-        colorButton.connect('color-set', () => {
+        colorButton.connect('notify::rgba', () => {
             const rgba = colorButton.get_rgba();
             const hex = _rgbaToHex(rgba);
             colorEntry.set_text(hex);

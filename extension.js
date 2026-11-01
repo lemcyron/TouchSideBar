@@ -45,9 +45,13 @@ function makeIcon(iconName, iconColor, iconSize = 24) {
  */
 function spawnCommand(cmd) {
     try {
-        GLib.spawn_command_line_async(cmd);
+        const proc = Gio.Subprocess.new(
+            ['/bin/sh', '-c', cmd],
+            Gio.SubprocessFlags.NONE
+        );
+        proc.wait_async(null, null);
     } catch (e) {
-        logError(e, `TouchSideBar: failed to run command: ${cmd}`);
+        console.error(`TouchSideBar: failed to run command: ${cmd}`, e);
     }
 }
 
@@ -128,7 +132,7 @@ function executeAction(action, extensionObject) {
             }
             break;
         default:
-            log(`TouchSideBar: unknown action type "${action.type}"`);
+            console.warn(`TouchSideBar: unknown action type "${action.type}"`);
     }
 }
 
@@ -149,7 +153,7 @@ class TouchActionButton extends St.Button {
         this._action = action;
         this._ext = extensionObject;
 
-        const box = new St.BoxLayout({ vertical: true, x_align: Clutter.ActorAlign.CENTER });
+        const box = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_align: Clutter.ActorAlign.CENTER });
 
         const iconName = action.icon || _defaultIconForType(action.type);
         const icon = makeIcon(iconName, action.iconColor || '', 28);
@@ -273,7 +277,7 @@ class TouchSideBar extends St.BoxLayout {
     _init(settings, extensionObject) {
         super._init({
             style_class: 'touch-sidebar',
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             reactive: true,
             track_hover: true,
             clip_to_allocation: true,
@@ -288,16 +292,15 @@ class TouchSideBar extends St.BoxLayout {
         // ── Scroll container for buttons ──────────────────────
         this._scrollView = new St.ScrollView({
             style_class: 'touch-sidebar-scroll',
-            hscrollbar_policy: St.PolicyType.NEVER,
-            vscrollbar_policy: St.PolicyType.AUTOMATIC,
             y_expand: true,
             x_expand: true,
-            overlay_scrollbars: true,
         });
+        this._scrollView.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
+        this._scrollView.set_overlay_scrollbars(true);
 
         this._buttonBox = new St.BoxLayout({
             style_class: 'touch-sidebar-button-box',
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
         });
         this._scrollView.set_child(this._buttonBox);
