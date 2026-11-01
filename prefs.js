@@ -13,8 +13,9 @@
 import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk';
 import Adw from 'gi://Adw';
+import Gio from 'gi://Gio';
 
-import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
+import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -280,24 +281,6 @@ export default class TouchSideBarPreferences extends ExtensionPreferences {
         });
         widthRow.add_suffix(widthSpin);
         layoutGroup.add(widthRow);
-
-        // Auto-hide
-        const autoHideGroup = new Adw.PreferencesGroup({ title: _('Behaviour') });
-        generalPage.add(autoHideGroup);
-
-        const autoHideRow = new Adw.ActionRow({
-            title: _('Auto-hide When Window Overlaps'),
-            subtitle: _('Hides the sidebar when any window is underneath it'),
-        });
-        const autoHideSwitch = new Gtk.Switch({
-            active: settings.get_boolean('auto-hide'),
-            valign: Gtk.Align.CENTER,
-        });
-        autoHideSwitch.connect('notify::active', () => {
-            settings.set_boolean('auto-hide', autoHideSwitch.active);
-        });
-        autoHideRow.add_suffix(autoHideSwitch);
-        autoHideGroup.add(autoHideRow);
 
         // ═══════════════════════════════════════════════════════
         // PAGE 2 – Actions

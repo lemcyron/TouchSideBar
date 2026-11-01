@@ -11,7 +11,6 @@ import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
@@ -272,6 +271,8 @@ class ResizeHandle extends St.DrawingArea {
 
 // ─── Sidebar Panel ──────────────────────────────────────────────────────────────
 
+const DISMISS_THRESHOLD = 20; // px outward travel on sidebar to dismiss
+
 const TouchSideBar = GObject.registerClass(
 class TouchSideBar extends St.BoxLayout {
     _init(settings, extensionObject) {
@@ -285,8 +286,7 @@ class TouchSideBar extends St.BoxLayout {
 
         this._settings = settings;
         this._ext = extensionObject;
-        this._hideTimer = null;
-        this._visible = true;
+        this._visible = false;
         this._currentWidth = settings.get_int('sidebar-width');
 
         // ── Scroll container for buttons ──────────────────────
@@ -310,6 +310,19 @@ class TouchSideBar extends St.BoxLayout {
 
         this._rebuildLayout();
 
+        // ── Start hidden ───────────────────────────────────────
+        this.hide();
+        this.set_opacity(0);
+
+        // ── Dismiss swipe: drag outward toward screen edge ────
+        this._dismissDragging = false;
+        this._dismissStartX = 0;
+        this._dismissTriggered = false;
+        this.connect('button-press-event', this._onDismissPress.bind(this));
+        this.connect('button-release-event', this._onDismissRelease.bind(this));
+        this.connect('motion-event', this._onDismissMotion.bind(this));
+        this.connect('touch-event', this._onDismissTouch.bind(this));
+
         // ── Settings listeners ────────────────────────────────
         this._settingsChangedId = settings.connect('changed', (_s, key) => {
             if (key === 'sidebar-on-right' || key === 'sidebar-width' || key === 'actions') {
@@ -320,24 +333,62 @@ class TouchSideBar extends St.BoxLayout {
                 this._applyWidth();
             }
         });
-
-        // ── Window overlap detection ──────────────────────────
-        this._windowCreatedId = global.display.connect('window-created', (_display, win) => {
-            this._trackWindow(win);
-            this._checkOverlap();
-        });
-        this._windowFocusId = global.display.connect('notify::focus-window', () => this._checkOverlap());
-        this._workspaceChangedId = global.workspaceManager.connect(
-            'active-workspace-changed', () => {
-                this._untrackWindows();
-                this._trackAllWindows();
-                this._checkOverlap();
-            });
-
-        // Watch all windows for geometry changes
-        this._windowSignals = [];
-        this._trackAllWindows();
     }
+
+    // ── Dismiss swipe handlers ────────────────────────────────────────────────
+
+    _onDismissPress(actor, event) {
+        this._dismissDragging = true;
+        this._dismissTriggered = false;
+        this._dismissStartX = event.get_coords()[0];
+        return Clutter.EVENT_PROPAGATE;
+    }
+
+    _onDismissRelease() {
+        this._dismissDragging = false;
+        return Clutter.EVENT_PROPAGATE;
+    }
+
+    _onDismissMotion(actor, event) {
+        if (!this._dismissDragging || this._dismissTriggered)
+            return Clutter.EVENT_PROPAGATE;
+        const [cx] = event.get_coords();
+        const onRight = this._settings.get_boolean('sidebar-on-right');
+        // outward = toward the screen edge where the sidebar lives
+        const delta = onRight ? cx - this._dismissStartX : this._dismissStartX - cx;
+        if (delta >= DISMISS_THRESHOLD) {
+            this._dismissTriggered = true;
+            this._hideSidebar();
+        }
+        return Clutter.EVENT_PROPAGATE;
+    }
+
+    _onDismissTouch(actor, event) {
+        const type = event.type();
+        if (type === Clutter.EventType.TOUCH_BEGIN) {
+            this._dismissDragging = true;
+            this._dismissTriggered = false;
+            this._dismissStartX = event.get_coords()[0];
+            return Clutter.EVENT_PROPAGATE;
+        }
+        if (type === Clutter.EventType.TOUCH_END || type === Clutter.EventType.TOUCH_CANCEL) {
+            this._dismissDragging = false;
+            return Clutter.EVENT_PROPAGATE;
+        }
+        if (type === Clutter.EventType.TOUCH_UPDATE && this._dismissDragging && !this._dismissTriggered) {
+            const [cx] = event.get_coords();
+            const onRight = this._settings.get_boolean('sidebar-on-right');
+            const delta = onRight ? cx - this._dismissStartX : this._dismissStartX - cx;
+            if (delta >= DISMISS_THRESHOLD) {
+                this._dismissTriggered = true;
+                this._hideSidebar();
+            }
+            return Clutter.EVENT_PROPAGATE;
+        }
+        return Clutter.EVENT_PROPAGATE;
+    }
+
+    // ── Layout ────────────────────────────────────────────────────────────────
 
     _rebuildLayout() {
         // Remove existing children
@@ -399,7 +450,6 @@ class TouchSideBar extends St.BoxLayout {
 
         const onRight = this._settings.get_boolean('sidebar-on-right');
         const w = this._currentWidth;
-        // GNOME 45+: Main.panel is the actor itself (no .actor wrapper)
         const panelHeight = Main.panel.get_height() || 32;
 
         this.set_position(
@@ -409,68 +459,7 @@ class TouchSideBar extends St.BoxLayout {
         this.set_height(monitor.height - panelHeight);
     }
 
-    // ── Auto-hide on window overlap ───────────────────────────────────────────
-
-    _trackAllWindows() {
-        const workspace = global.workspaceManager.get_active_workspace();
-        const windows = workspace.list_windows();
-        for (const win of windows) {
-            this._trackWindow(win);
-        }
-    }
-
-    _trackWindow(win) {
-        const id = win.connect('size-changed', () => this._checkOverlap());
-        const id2 = win.connect('position-changed', () => this._checkOverlap());
-        this._windowSignals.push({ win, ids: [id, id2] });
-    }
-
-    _untrackWindows() {
-        for (const { win, ids } of this._windowSignals) {
-            for (const id of ids) {
-                try { win.disconnect(id); } catch (_e) {}
-            }
-        }
-        this._windowSignals = [];
-    }
-
-    _checkOverlap() {
-        if (!this._settings.get_boolean('auto-hide')) {
-            this._showSidebar();
-            return;
-        }
-
-        const monitor = Main.layoutManager.primaryMonitor;
-        if (!monitor) return;
-
-        const onRight = this._settings.get_boolean('sidebar-on-right');
-        const w = this._currentWidth;
-        const panelHeight = Main.panel.get_height() || 32;
-
-        const sidebarRect = {
-            x: onRight ? monitor.x + monitor.width - w : monitor.x,
-            y: monitor.y + panelHeight,
-            width: w,
-            height: monitor.height - panelHeight,
-        };
-
-        const workspace = global.workspaceManager.get_active_workspace();
-        const windows = workspace.list_windows();
-
-        let overlaps = false;
-        for (const win of windows) {
-            if (win.get_window_type() !== Meta.WindowType.NORMAL) continue;
-            if (win.minimized) continue;
-            const frame = win.get_frame_rect();
-            if (_rectsOverlap(frame, sidebarRect)) {
-                overlaps = true;
-                break;
-            }
-        }
-
-        if (overlaps) this._hideSidebar();
-        else this._showSidebar();
-    }
+    // ── Show / Hide ───────────────────────────────────────────────────────────
 
     _hideSidebar() {
         if (!this._visible) return;
@@ -497,24 +486,10 @@ class TouchSideBar extends St.BoxLayout {
     // ── Public toggle (called from panel button) ──────────────────────────────
 
     toggleVisibility() {
-        if (this.visible && this.opacity > 0) {
-            this._visible = false;
-            this.ease({
-                opacity: 0,
-                duration: 200,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                onComplete: () => { this.hide(); },
-            });
-        } else {
-            this._visible = true;
-            this.show();
-            this.ease({
-                opacity: 255,
-                duration: 200,
-                mode: Clutter.AnimationMode.EASE_IN_QUAD,
-            });
-            this._checkOverlap();
-        }
+        if (this._visible)
+            this._hideSidebar();
+        else
+            this._showSidebar();
     }
 
     updatePosition() {
@@ -526,31 +501,11 @@ class TouchSideBar extends St.BoxLayout {
             this._settings.disconnect(this._settingsChangedId);
             this._settingsChangedId = null;
         }
-        if (this._windowCreatedId) {
-            global.display.disconnect(this._windowCreatedId);
-            this._windowCreatedId = null;
-        }
-        if (this._windowFocusId) {
-            global.display.disconnect(this._windowFocusId);
-            this._windowFocusId = null;
-        }
-        if (this._workspaceChangedId) {
-            global.workspaceManager.disconnect(this._workspaceChangedId);
-            this._workspaceChangedId = null;
-        }
-        this._untrackWindows();
         super.destroy();
     }
 });
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-
-function _rectsOverlap(a, b) {
-    return !(a.x + a.width <= b.x ||
-             b.x + b.width <= a.x ||
-             a.y + a.height <= b.y ||
-             b.y + b.height <= a.y);
-}
 
 function _defaultActions() {
     return [
@@ -731,7 +686,6 @@ export default class TouchSideBarExtension extends Extension {
             trackFullscreen: false,
         });
         this._sidebar._positionSidebar();
-        this._sidebar._checkOverlap();
 
         // ── Edge swipe zone ───────────────────────────────────
         // Placed above sidebar in the chrome stack so it catches
@@ -757,7 +711,6 @@ export default class TouchSideBarExtension extends Extension {
         this._monitorsChangedId = Main.layoutManager.connect(
             'monitors-changed', () => {
                 this._sidebar._positionSidebar();
-                this._sidebar._checkOverlap();
                 this._swipeZone._reposition();
             }
         );

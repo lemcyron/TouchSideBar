@@ -20,17 +20,6 @@
       <description>Width of the sidebar panel in pixels (48–400).</description>
     </key>
 
-    <!-- ── Behaviour ───────────────────────────────────────────── -->
-    <key name="auto-hide" type="b">
-      <default>true</default>
-      <summary>Auto-hide when a window overlaps the sidebar</summary>
-      <description>
-        When enabled the sidebar fades out whenever any normal window on the
-        active workspace intersects its screen area, and fades back in when
-        the overlap is gone.
-      </description>
-    </key>
-
     <!-- ── Actions ─────────────────────────────────────────────── -->
     <key name="actions" type="s">
       <default>'[]'</default>
