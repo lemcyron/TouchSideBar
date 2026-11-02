@@ -107,6 +107,8 @@ const NAMED_KEYSYMS = {
     backslash: 0x5c, semicolon: 0x3b, apostrophe: 0x27, grave: 0x60,
     equal: 0x3d, bracketleft: 0x5b, bracketright: 0x5d,
     volumeup: 0x1008ff13, volumedown: 0x1008ff11, mute: 0x1008ff12,
+    audioplay: 0x1008ff14, audiopause: 0x1008ff31, audiostop: 0x1008ff15,
+    audioprev: 0x1008ff16, audionext: 0x1008ff17,
 };
 
 function keysymForToken(token) {
@@ -195,6 +197,51 @@ function destroyVirtualKeyboard() {
     }
 }
 
+function mprisAction(methodName, fallbackKey) {
+    try {
+        Gio.DBus.session.call(
+            'org.freedesktop.DBus',
+            '/org/freedesktop/DBus',
+            'org.freedesktop.DBus',
+            'ListNames',
+            null,
+            null,
+            Gio.DBusCallFlags.NONE,
+            -1,
+            null,
+            (conn, res) => {
+                try {
+                    const result = conn.call_finish(res);
+                    const [names] = result.deepUnpack();
+                    const mprisNames = names.filter(n => n.startsWith('org.mpris.MediaPlayer2.'));
+                    if (mprisNames.length > 0) {
+                        for (const name of mprisNames) {
+                            conn.call(
+                                name,
+                                '/org/mpris/MediaPlayer2',
+                                'org.mpris.MediaPlayer2.Player',
+                                methodName,
+                                null,
+                                null,
+                                Gio.DBusCallFlags.NONE,
+                                -1,
+                                null,
+                                null
+                            );
+                        }
+                    } else if (fallbackKey) {
+                        sendKeyCombo(fallbackKey);
+                    }
+                } catch (_e) {
+                    if (fallbackKey) sendKeyCombo(fallbackKey);
+                }
+            }
+        );
+    } catch (_e) {
+        if (fallbackKey) sendKeyCombo(fallbackKey);
+    }
+}
+
 // ─── Action Executor ──────────────────────────────────────────────────────────
 
 /**
@@ -203,16 +250,20 @@ function destroyVirtualKeyboard() {
 function executeAction(action, extensionObject) {
     switch (action.type) {
         case 'prev-workspace': {
-            const ws = global.workspaceManager;
-            const idx = ws.get_active_workspace_index();
-            if (idx > 0) ws.get_workspace_by_index(idx - 1).activate(global.get_current_time());
+            const ws = global.workspace_manager ?? global.workspaceManager;
+            if (ws) {
+                const idx = ws.get_active_workspace_index();
+                if (idx > 0) ws.get_workspace_by_index(idx - 1).activate(global.get_current_time());
+            }
             break;
         }
         case 'next-workspace': {
-            const ws = global.workspaceManager;
-            const idx = ws.get_active_workspace_index();
-            const last = ws.get_n_workspaces() - 1;
-            if (idx < last) ws.get_workspace_by_index(idx + 1).activate(global.get_current_time());
+            const ws = global.workspace_manager ?? global.workspaceManager;
+            if (ws) {
+                const idx = ws.get_active_workspace_index();
+                const last = ws.get_n_workspaces() - 1;
+                if (idx < last) ws.get_workspace_by_index(idx + 1).activate(global.get_current_time());
+            }
             break;
         }
         case 'overview':
@@ -260,6 +311,27 @@ function executeAction(action, extensionObject) {
             });
             break;
         }
+        case 'media-play-pause':
+            mprisAction('PlayPause', 'audioplay');
+            break;
+        case 'media-next':
+            mprisAction('Next', 'audionext');
+            break;
+        case 'media-prev':
+            mprisAction('Previous', 'audioprev');
+            break;
+        case 'media-stop':
+            mprisAction('Stop', 'audiostop');
+            break;
+        case 'media-volume-up':
+            sendKeyCombo('volumeup');
+            break;
+        case 'media-volume-down':
+            sendKeyCombo('volumedown');
+            break;
+        case 'media-volume-mute':
+            sendKeyCombo('mute');
+            break;
         case 'keyboard-shortcut':
             sendKeyCombo(action.shortcut);
             break;
@@ -322,6 +394,13 @@ function _defaultIconForType(type) {
         'next-workspace':    'go-next-symbolic',
         'overview':          'view-grid-symbolic',
         'fullscreen':        'view-fullscreen-symbolic',
+        'media-play-pause':  'media-playback-start-symbolic',
+        'media-next':        'media-skip-forward-symbolic',
+        'media-prev':        'media-skip-backward-symbolic',
+        'media-stop':        'media-playback-stop-symbolic',
+        'media-volume-up':   'audio-volume-high-symbolic',
+        'media-volume-down': 'audio-volume-low-symbolic',
+        'media-volume-mute': 'audio-volume-muted-symbolic',
         'power-shutdown':    'system-shutdown-symbolic',
         'power-reboot':      'system-reboot-symbolic',
         'power-suspend':     'weather-clear-night-symbolic',
@@ -330,7 +409,7 @@ function _defaultIconForType(type) {
         'terminal-command':  'utilities-terminal-symbolic',
         'system-command':    'system-run-symbolic',
         'copy':              'edit-copy-symbolic',
-        'paste':             'edit-paste-symbolic',
+        'paste':              'edit-paste-symbolic',
         'app-shortcut':      'application-x-executable-symbolic',
         'keyboard-shortcut': 'input-keyboard-symbolic',
     };
@@ -585,7 +664,7 @@ class TouchSideBar extends St.BoxLayout {
 
         const onRight = this._settings.get_boolean('sidebar-on-right');
         const w = this._currentWidth;
-        const panelHeight = Main.panel.get_height() || 32;
+        const panelHeight = Main.panel.height || (typeof Main.panel.get_height === 'function' ? Main.panel.get_height() : 32) || 32;
 
         this.set_position(
             onRight ? monitor.x + monitor.width - w : monitor.x,
@@ -785,7 +864,7 @@ class EdgeSwipeZone extends St.Button {
         const monitor = Main.layoutManager.primaryMonitor;
         if (!monitor) return;
         const onRight = this._settings.get_boolean('sidebar-on-right');
-        const panelHeight = Main.panel.get_height() || 32;
+        const panelHeight = Main.panel.height || (typeof Main.panel.get_height === 'function' ? Main.panel.get_height() : 32) || 32;
         this.set_size(8, monitor.height - panelHeight);
         this.set_position(
             onRight ? monitor.x + monitor.width - 8 : monitor.x,
@@ -869,7 +948,8 @@ export default class TouchSideBarExtension extends Extension {
         if (focus && focus.get_window_type() === Meta.WindowType.NORMAL)
             return focus;
 
-        const workspace = global.workspace_manager.get_active_workspace();
+        const wsManager = global.workspace_manager ?? global.workspaceManager;
+        const workspace = wsManager?.get_active_workspace?.();
         const windows = global.display.get_tab_list(Meta.TabList.NORMAL, workspace);
         return windows.find(w => !w.minimized) ?? null;
     }
@@ -886,13 +966,15 @@ export default class TouchSideBarExtension extends Extension {
             return;
         }
 
-        if (win.fullscreen) {
+        const isFullscreen = typeof win.is_fullscreen === 'function' ? win.is_fullscreen() : win.fullscreen;
+        if (isFullscreen) {
             win.unmake_fullscreen();
             return;
         }
 
         win.make_fullscreen();
-        if (!win.fullscreen) {
+        const nowFs = typeof win.is_fullscreen === 'function' ? win.is_fullscreen() : win.fullscreen;
+        if (!nowFs) {
             console.warn('TouchSideBar: window refused to enter fullscreen');
             return;
         }
@@ -901,7 +983,8 @@ export default class TouchSideBarExtension extends Extension {
         this._fsRestoreSidebar = this._sidebar.isShown;
         this._fsSignalIds = [
             win.connect('notify::fullscreen', () => {
-                if (!win.fullscreen)
+                const fs = typeof win.is_fullscreen === 'function' ? win.is_fullscreen() : win.fullscreen;
+                if (!fs)
                     this._exitSidebarFullscreen(false);
             }),
             win.connect('unmanaged', () => this._exitSidebarFullscreen(false)),
@@ -927,7 +1010,8 @@ export default class TouchSideBarExtension extends Extension {
             win.disconnect(id);
         this._fsSignalIds = null;
 
-        if (unmake && win.fullscreen)
+        const isFs = typeof win.is_fullscreen === 'function' ? win.is_fullscreen() : win.fullscreen;
+        if (unmake && isFs)
             win.unmake_fullscreen();
 
         this._fsExitButton?.hide();

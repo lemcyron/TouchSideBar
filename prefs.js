@@ -27,6 +27,13 @@ const ACTION_TYPES = [
     { id: 'next-workspace',  label: 'Next Workspace',         icon: 'go-next-symbolic' },
     { id: 'overview',        label: 'Show Overview',          icon: 'view-grid-symbolic' },
     { id: 'fullscreen',      label: 'Toggle Fullscreen',      icon: 'view-fullscreen-symbolic' },
+    { id: 'media-play-pause',label: 'Media: Play / Pause',    icon: 'media-playback-start-symbolic' },
+    { id: 'media-next',      label: 'Media: Next Track',      icon: 'media-skip-forward-symbolic' },
+    { id: 'media-prev',      label: 'Media: Previous Track',  icon: 'media-skip-backward-symbolic' },
+    { id: 'media-stop',      label: 'Media: Stop',            icon: 'media-playback-stop-symbolic' },
+    { id: 'media-volume-up', label: 'Volume: Up',             icon: 'audio-volume-high-symbolic' },
+    { id: 'media-volume-down', label: 'Volume: Down',         icon: 'audio-volume-low-symbolic' },
+    { id: 'media-volume-mute', label: 'Volume: Mute',         icon: 'audio-volume-muted-symbolic' },
     { id: 'power-shutdown',  label: 'Power Off',              icon: 'system-shutdown-symbolic' },
     { id: 'power-reboot',    label: 'Reboot',                 icon: 'system-reboot-symbolic' },
     { id: 'power-suspend',   label: 'Suspend',                icon: 'weather-clear-night-symbolic' },
@@ -68,8 +75,6 @@ const ActionRow = GObject.registerClass({
     GTypeName: 'TouchSideBarActionRow',
     Signals: {
         'removed': {},
-        'moved-up': {},
-        'moved-down': {},
         'changed': {},
     },
 }, class ActionRow extends Adw.ExpanderRow {
@@ -82,6 +87,14 @@ const ActionRow = GObject.registerClass({
 
         this._action = { ...action };
 
+        this._dragHandle = new Gtk.Image({
+            icon_name: 'list-drag-handle-symbolic',
+            css_classes: ['dim-label'],
+            valign: Gtk.Align.CENTER,
+            tooltip_text: _('Drag to reorder'),
+        });
+        this.add_prefix(this._dragHandle);
+
         this._buildContent();
 
         this.connect('notify::enable-expansion', () => {
@@ -91,6 +104,23 @@ const ActionRow = GObject.registerClass({
     }
 
     _buildContent() {
+        // ── Label ─────────────────────────────────────────────
+        const labelRow = new Adw.EntryRow({ title: _('Button Label') });
+        labelRow.set_text(this._action.label || '');
+        labelRow.connect('notify::text', () => {
+            this._action.label = labelRow.get_text();
+            this.set_title(_actionSummary(this._action));
+            this.emit('changed');
+        });
+
+        // ── Icon Name ─────────────────────────────────────────
+        const iconRow = new Adw.EntryRow({ title: _('Icon Name (symbolic)') });
+        iconRow.set_text(this._action.icon || '');
+        iconRow.connect('notify::text', () => {
+            this._action.icon = iconRow.get_text();
+            this.emit('changed');
+        });
+
         // ── Action Type ───────────────────────────────────────
         const typeRow = new Adw.ComboRow({ title: _('Action Type') });
         const typeModel = new Gtk.StringList();
@@ -104,31 +134,14 @@ const ActionRow = GObject.registerClass({
             // Auto-fill icon if empty
             if (!this._action.icon || this._action.icon === '') {
                 this._action.icon = ACTION_TYPES[idx]?.icon || '';
-                iconEntry.set_text(this._action.icon);
+                iconRow.set_text(this._action.icon);
             }
             this.set_title(_actionSummary(this._action));
             this.emit('changed');
         });
+
         this.add_row(typeRow);
-
-        // ── Label ─────────────────────────────────────────────
-        const labelRow = new Adw.EntryRow({ title: _('Button Label') });
-        labelRow.set_text(this._action.label || '');
-        labelRow.connect('notify::text', () => {
-            this._action.label = labelRow.get_text();
-            this.set_title(_actionSummary(this._action));
-            this.emit('changed');
-        });
         this.add_row(labelRow);
-
-        // ── Icon Name ─────────────────────────────────────────
-        const iconRow = new Adw.EntryRow({ title: _('Icon Name (symbolic)') });
-        const iconEntry = iconRow;
-        iconRow.set_text(this._action.icon || '');
-        iconRow.connect('notify::text', () => {
-            this._action.icon = iconRow.get_text();
-            this.emit('changed');
-        });
         this.add_row(iconRow);
 
         // ── Icon Color ────────────────────────────────────────
@@ -202,36 +215,56 @@ const ActionRow = GObject.registerClass({
         });
         this.add_row(appRow);
 
-        // ── Move Up / Move Down / Remove ─────────────────────
+        // ── Remove Button ────────────────────────────────────
         const actionsBar = new Adw.ActionRow({ title: '' });
-        const upBtn = new Gtk.Button({
-            icon_name: 'go-up-symbolic',
-            tooltip_text: _('Move Up'),
-            valign: Gtk.Align.CENTER,
-            css_classes: ['flat'],
-        });
-        const downBtn = new Gtk.Button({
-            icon_name: 'go-down-symbolic',
-            tooltip_text: _('Move Down'),
-            valign: Gtk.Align.CENTER,
-            css_classes: ['flat'],
-        });
         const removeBtn = new Gtk.Button({
             icon_name: 'user-trash-symbolic',
+            label: _('Delete Action'),
             tooltip_text: _('Remove Action'),
             valign: Gtk.Align.CENTER,
-            css_classes: ['flat', 'destructive-action'],
+            css_classes: ['destructive-action'],
         });
-        upBtn.connect('clicked', () => this.emit('moved-up'));
-        downBtn.connect('clicked', () => this.emit('moved-down'));
         removeBtn.connect('clicked', () => this.emit('removed'));
-
-        const btnBox = new Gtk.Box({ spacing: 4, valign: Gtk.Align.CENTER });
-        btnBox.append(upBtn);
-        btnBox.append(downBtn);
-        btnBox.append(removeBtn);
-        actionsBar.add_suffix(btnBox);
+        actionsBar.add_suffix(removeBtn);
         this.add_row(actionsBar);
+    }
+
+    setupDragAndDrop(index, onReorder) {
+        // Drag Source attached to the handle
+        const dragSource = new Gtk.DragSource({
+            actions: Gdk.DragAction.MOVE,
+        });
+        dragSource.connect('prepare', (_source, _x, _y) => {
+            const val = new GObject.Value();
+            val.init(GObject.TYPE_STRING);
+            val.set_string(String(index));
+            return Gdk.ContentProvider.new_for_value(val);
+        });
+        dragSource.connect('drag-begin', (_source, _drag) => {
+            const paintable = Gtk.WidgetPaintable.new(this);
+            dragSource.set_icon(paintable, 0, 0);
+        });
+        this._dragHandle.add_controller(dragSource);
+
+        // Drop Target attached to the row
+        const dropTarget = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE);
+        dropTarget.connect('enter', () => {
+            this.add_css_class('drag-hover');
+            return Gdk.DragAction.MOVE;
+        });
+        dropTarget.connect('leave', () => {
+            this.remove_css_class('drag-hover');
+        });
+        dropTarget.connect('drop', (_target, value, _x, _y) => {
+            this.remove_css_class('drag-hover');
+            const srcIdx = parseInt(value, 10);
+            if (!isNaN(srcIdx) && srcIdx !== index) {
+                onReorder(srcIdx, index);
+                return true;
+            }
+            return false;
+        });
+        this.add_controller(dropTarget);
     }
 
     getAction() {
@@ -377,7 +410,7 @@ export default class TouchSideBarPreferences extends ExtensionPreferences {
 
         const actionsGroup = new Adw.PreferencesGroup({
             title: _('Sidebar Buttons'),
-            description: _('Add, remove, and reorder the buttons shown in the sidebar. Changes are applied immediately.'),
+            description: _('Add, remove, and drag to reorder the buttons shown in the sidebar. Changes are applied immediately.'),
         });
         actionsPage.add(actionsGroup);
 
@@ -408,6 +441,12 @@ export default class TouchSideBarPreferences extends ExtensionPreferences {
                 // Capture i in a block-scoped const so closures below are correct
                 const idx = i;
                 const row = new ActionRow(actions[idx]);
+                row.setupDragAndDrop(idx, (fromIdx, toIdx) => {
+                    const [movedItem] = actions.splice(fromIdx, 1);
+                    actions.splice(toIdx, 0, movedItem);
+                    buildRows();
+                    saveActions();
+                });
                 this._actionRows.push(row);
                 actionsGroup.add(row);
 
@@ -418,20 +457,6 @@ export default class TouchSideBarPreferences extends ExtensionPreferences {
 
                 row.connect('removed', () => {
                     actions.splice(idx, 1);
-                    buildRows();
-                    saveActions();
-                });
-
-                row.connect('moved-up', () => {
-                    if (idx === 0) return;
-                    [actions[idx - 1], actions[idx]] = [actions[idx], actions[idx - 1]];
-                    buildRows();
-                    saveActions();
-                });
-
-                row.connect('moved-down', () => {
-                    if (idx === actions.length - 1) return;
-                    [actions[idx], actions[idx + 1]] = [actions[idx + 1], actions[idx]];
                     buildRows();
                     saveActions();
                 });

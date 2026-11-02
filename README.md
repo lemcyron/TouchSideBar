@@ -33,6 +33,13 @@ inconvenient.
 | **Next Workspace** | Activates the next workspace |
 | **Show Overview** | Toggles the GNOME Activities Overview |
 | **Toggle Fullscreen** | Makes / unsets the focused window fullscreen |
+| **Media: Play / Pause** | Toggles playback of active media players (MPRIS) |
+| **Media: Next Track** | Skips to next media track |
+| **Media: Previous Track** | Skips to previous media track |
+| **Media: Stop** | Stops media playback |
+| **Volume: Up** | Increases system audio volume |
+| **Volume: Down** | Decreases system audio volume |
+| **Volume: Mute** | Toggles system audio mute |
 | **Power Off** | `gnome-session-quit --power-off` |
 | **Reboot** | `gnome-session-quit --reboot` |
 | **Suspend** | `systemctl suspend` |
@@ -144,8 +151,8 @@ Every button in the sidebar corresponds to one row here:
   - Icon color (text entry or color picker)
   - Command (for Terminal Command / System Command types)
   - App desktop ID (for App Shortcut type)
-- **Move Up / Move Down** reorder the button
-- **Remove** deletes the button
+- **Drag and drop** by the handle on the left of any row to reorder actions
+- **Delete Action** removes the button
 
 Use **Add New Action Button** at the bottom to append a new button of any type.  
 **Reset Actions to Defaults** restores the factory button list.
