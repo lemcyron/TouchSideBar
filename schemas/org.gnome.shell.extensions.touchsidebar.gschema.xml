@@ -55,6 +55,10 @@
           enabled    – whether the button is shown (boolean)
           command    – shell command for terminal-command / system-command
           appId      – .desktop id for app-shortcut actions
+          shortcut   – key combination for keyboard-shortcut actions, e.g. "Ctrl+Shift+T"
+          size       – height in pixels for spacer items
+          (type "spacer" and "separator" are layout-only items)
+
       </description>
     </key>
 

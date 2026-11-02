@@ -37,6 +37,9 @@ const ACTION_TYPES = [
     { id: 'copy',            label: 'Copy (Clipboard)',       icon: 'edit-copy-symbolic' },
     { id: 'paste',           label: 'Paste (Clipboard)',      icon: 'edit-paste-symbolic' },
     { id: 'app-shortcut',    label: 'App Shortcut',           icon: 'application-x-executable-symbolic' },
+    { id: 'keyboard-shortcut', label: 'Keyboard Shortcut',    icon: 'input-keyboard-symbolic' },
+    { id: 'spacer',          label: 'Spacer (empty gap)',     icon: '' },
+    { id: 'separator',       label: 'Horizontal Line',        icon: '' },
 ];
 
 function _defaultActions() {
@@ -166,6 +169,29 @@ const ActionRow = GObject.registerClass({
             this.emit('changed');
         });
         this.add_row(cmdRow);
+
+        // ── Keyboard shortcut (for keyboard-shortcut) ─────────
+        const shortcutRow = new Adw.EntryRow({ title: _('Keyboard Shortcut (e.g. Ctrl+Shift+T, Alt+Left, Super+D, F11)') });
+        shortcutRow.set_text(this._action.shortcut || '');
+        shortcutRow.connect('notify::text', () => {
+            this._action.shortcut = shortcutRow.get_text();
+            this.emit('changed');
+        });
+        this.add_row(shortcutRow);
+
+        // ── Spacer height (for spacer) ────────────────────────
+        const sizeRow = new Adw.SpinRow({
+            title: _('Spacer Height (px)'),
+            adjustment: new Gtk.Adjustment({
+                lower: 4, upper: 400, step_increment: 4, page_increment: 20,
+                value: parseInt(this._action.size, 10) || 24,
+            }),
+        });
+        sizeRow.connect('notify::value', () => {
+            this._action.size = Math.round(sizeRow.get_value());
+            this.emit('changed');
+        });
+        this.add_row(sizeRow);
 
         // ── App ID (for app-shortcut) ─────────────────────────
         const appRow = new Adw.EntryRow({ title: _('App Desktop ID (e.g. org.gnome.Files.desktop)') });
@@ -418,14 +444,17 @@ export default class TouchSideBarPreferences extends ExtensionPreferences {
         addBtn.connect('clicked', () => {
             const idx = typeCombo.get_selected();
             const meta = ACTION_TYPES[idx];
+            const layoutOnly = meta.id === 'spacer' || meta.id === 'separator';
             actions.push({
                 type: meta.id,
-                label: meta.label,
+                label: layoutOnly ? '' : meta.label,
                 icon: meta.icon,
                 iconColor: '',
                 enabled: true,
                 command: '',
                 appId: '',
+                shortcut: '',
+                size: 24,
             });
             buildRows();
             saveActions();

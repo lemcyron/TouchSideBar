@@ -5,16 +5,15 @@
 /* ── Sidebar container ────────────────────────────────────────── */
 .touch-sidebar {
     background-color: rgba(30, 30, 30, 0.92);
-    border-radius: 0 12px 12px 0;   /* rounded right edge when on left */
+    border-radius: 0;
     padding: 8px 4px;
     spacing: 4px;
     box-shadow: 4px 0 16px rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Mirror radius when sidebar is on the right */
+/* Mirror shadow when sidebar is on the right */
 .touch-sidebar.sidebar-right {
-    border-radius: 12px 0 0 12px;
     box-shadow: -4px 0 16px rgba(0, 0, 0, 0.5);
 }
 
@@ -70,21 +69,15 @@
     text-align: center;
 }
 
-/* ── Resize handle ────────────────────────────────────────────── */
-.touch-sidebar-resize-handle {
-    width: 8px;
-    background-color: rgba(255, 255, 255, 0.10);
-    border-radius: 4px;
-    cursor: col-resize;
-    transition-duration: 120ms;
+/* ── Layout-only items: spacers and horizontal lines ──────────── */
+.touch-sidebar-spacer {
+    background-color: transparent;
 }
 
-.touch-sidebar-resize-handle:hover {
-    background-color: rgba(120, 170, 255, 0.55);
-}
-
-.touch-sidebar-resize-handle:active {
-    background-color: rgba(120, 170, 255, 0.85);
+.touch-sidebar-separator {
+    background-color: rgba(255, 255, 255, 0.25);
+    margin: 4px 6px;
+    border-radius: 1px;
 }
 
 /* ── Floating exit-fullscreen button (lower left) ─────────────── */

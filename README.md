@@ -1,6 +1,6 @@
 # TouchSideBar – GNOME Shell Extension
 
-A resizable, **touch-friendly sidebar** for GNOME Shell 45–51. Designed to be
+A **touch-friendly sidebar** for GNOME Shell 45–51. Designed to be
 useful on touchscreen devices where reaching the top panel or corners is
 inconvenient.
 
@@ -11,7 +11,7 @@ inconvenient.
 | Feature | Detail |
 |---|---|
 | **Left / Right placement** | Toggle the sidebar to either edge from the panel menu or Preferences |
-| **Resizable** | Drag the resize handle to any width between 48 px and 400 px |
+| **Adjustable width** | Set the width (48–400 px) in Preferences; it cannot be dragged |
 | **One-click toggle** | Clicking / tapping the panel icon immediately shows or hides the sidebar (right-click opens the menu) |
 | **Same plane as windows** | While visible, the sidebar reserves screen space so app windows sit beside it, never above or below it |
 | **Sidebar fullscreen** | The Fullscreen button fullscreens the focused window, hides the sidebar, and shows a small floating button at the lower-left to exit fullscreen |
@@ -42,6 +42,10 @@ inconvenient.
 | **Copy** | Shows a notification that clipboard content is ready |
 | **Paste** | Types clipboard text at the current cursor position via `xdotool` |
 | **App Shortcut** | Launches any installed application by its `.desktop` ID |
+| **Keyboard Shortcut** | Sends a key combination (e.g. `Ctrl+Shift+T`, `Alt+Left`, `Super+D`, `F11`) to the focused app. Works on Wayland |
+| **Spacer** | Empty gap of configurable height, for grouping buttons |
+| **Horizontal Line** | A thin divider line (optionally colored via the Icon Color field) |
+
 
 ---
 
