@@ -42,6 +42,14 @@
       </description>
     </key>
 
+    <key name="show-action-labels" type="b">
+      <default>true</default>
+      <summary>Show button labels</summary>
+      <description>
+        Whether to show text labels under the action button icons in the sidebar.
+      </description>
+    </key>
+
     <!-- ── Actions ─────────────────────────────────────────────── -->
     <key name="actions" type="s">
       <default>'[]'</default>

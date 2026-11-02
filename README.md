@@ -18,6 +18,7 @@ inconvenient.
 | **Tablet mode** | The sidebar appears automatically when the device enters touch/tablet mode (e.g. a convertible Chromebook folded to tablet) and hides when it leaves |
 | **Button alignment** | Align the buttons to the top, middle, or bottom of the sidebar |
 | **Sidebar color** | Pick any sidebar background color (including transparency) |
+| **Toggle button labels** | Show or hide text labels beneath action button icons |
 | **Customizable buttons** | Add, remove, reorder, and fully edit every action button from Preferences |
 | **Icon customization** | Each button has its own icon name (any GNOME symbolic icon) and an independent CSS color value |
 | **Preferences window** | Full GTK4 + libadwaita preferences window accessible from the panel menu |
@@ -130,6 +131,7 @@ gnome-extensions prefs touchsidebar@gnome-extension
 - **Sidebar Side** – toggle between Left and Right
 - **Sidebar Width** – numeric spin button (48–400 px)
 - **Button Alignment** – Top / Middle / Bottom
+- **Show Button Labels** – toggle text labels under action icons on/off
 - **Sidebar Color** – background color picker
 
 ### Actions tab

@@ -278,7 +278,7 @@ function executeAction(action, extensionObject) {
 
 const TouchActionButton = GObject.registerClass(
 class TouchActionButton extends St.Button {
-    _init(action, extensionObject) {
+    _init(action, extensionObject, showLabel = true) {
         super._init({
             style_class: 'touch-sidebar-btn',
             // Must not take key focus: the target app window has to stay
@@ -299,7 +299,7 @@ class TouchActionButton extends St.Button {
         const icon = makeIcon(iconName, action.iconColor || '', 28);
         box.add_child(icon);
 
-        if (action.label && action.label.trim() !== '') {
+        if (showLabel && action.label && action.label.trim() !== '') {
             const label = new St.Label({
                 text: action.label,
                 style_class: 'touch-sidebar-btn-label',
@@ -436,7 +436,7 @@ class TouchSideBar extends St.BoxLayout {
             // the rebuild below positions the sidebar using the new value.
             if (key === 'sidebar-width')
                 this._currentWidth = settings.get_int('sidebar-width');
-            if (key === 'sidebar-on-right' || key === 'sidebar-width' || key === 'actions') {
+            if (key === 'sidebar-on-right' || key === 'sidebar-width' || key === 'actions' || key === 'show-action-labels') {
                 this._rebuildLayout();
             }
             if (key === 'button-alignment' || key === 'sidebar-color') {
@@ -525,6 +525,8 @@ class TouchSideBar extends St.BoxLayout {
             actions = _defaultActions();
         }
 
+        const showLabels = this._settings.get_boolean('show-action-labels');
+
         for (const action of actions) {
             if (!action.enabled && action.enabled !== undefined) continue;
 
@@ -549,7 +551,7 @@ class TouchSideBar extends St.BoxLayout {
                 continue;
             }
 
-            const btn = new TouchActionButton(action, this._ext);
+            const btn = new TouchActionButton(action, this._ext, showLabels);
             this._buttonBox.add_child(btn);
         }
     }

@@ -330,6 +330,22 @@ export default class TouchSideBarPreferences extends ExtensionPreferences {
         });
         layoutGroup.add(alignRow);
 
+        // Show button labels
+        const showLabelsRow = new Adw.ActionRow({
+            title: _('Show Button Labels'),
+            subtitle: _('Display text labels below action icons'),
+        });
+        const showLabelsSwitch = new Gtk.Switch({
+            active: settings.get_boolean('show-action-labels'),
+            valign: Gtk.Align.CENTER,
+        });
+        showLabelsSwitch.connect('notify::active', () => {
+            settings.set_boolean('show-action-labels', showLabelsSwitch.active);
+        });
+        showLabelsRow.add_suffix(showLabelsSwitch);
+        showLabelsRow.set_activatable_widget(showLabelsSwitch);
+        layoutGroup.add(showLabelsRow);
+
         // Sidebar color
         const sbColorRow = new Adw.ActionRow({
             title: _('Sidebar Color'),
