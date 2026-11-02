@@ -12,9 +12,11 @@ import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Shell from 'gi://Shell';
+import Meta from 'gi://Meta';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+
 import { Extension, gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -23,6 +25,34 @@ const SIDEBAR_MIN_WIDTH = 48;
 const SIDEBAR_MAX_WIDTH = 400;
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
+
+/**
+ * Only allow characters that can appear in a CSS colour value, so the
+ * user-supplied setting can never inject extra CSS declarations.
+ */
+function isSafeCssColor(value) {
+    return typeof value === 'string' && value.length <= 64 &&
+        /^[#a-zA-Z0-9(),.%\s]+$/.test(value);
+}
+
+/**
+ * Find the default Clutter seat (exposes `touch-mode`, which mutter turns on
+ * when the device is folded into tablet mode / touchscreen-only use).
+ */
+function getSeat() {
+    const getters = [
+        () => global.stage.context.get_backend().get_default_seat(),
+        () => global.backend.get_default_seat(),
+        () => Clutter.get_default_backend().get_default_seat(),
+    ];
+    for (const get of getters) {
+        try {
+            const seat = get();
+            if (seat) return seat;
+        } catch (_e) { /* try next */ }
+    }
+    return null;
+}
 
 /**
  * Create a themed icon, falling back to a symbolic name.
@@ -78,14 +108,9 @@ function executeAction(action, extensionObject) {
             if (Main.overview.visible) Main.overview.hide();
             else Main.overview.show();
             break;
-        case 'fullscreen': {
-            const win = global.display.get_focus_window();
-            if (win) {
-                if (win.is_fullscreen()) win.unmake_fullscreen();
-                else win.make_fullscreen();
-            }
+        case 'fullscreen':
+            extensionObject?.toggleSidebarFullscreen();
             break;
-        }
         case 'power-shutdown':
             spawnCommand('gnome-session-quit --power-off');
             break;
@@ -195,6 +220,39 @@ function _defaultIconForType(type) {
     return map[type] || 'application-x-executable-symbolic';
 }
 
+// ─── Floating Fullscreen-Exit Button ───────────────────────────────────────────
+
+const FS_EXIT_SIZE = 56;
+const FS_EXIT_MARGIN = 16;
+
+const FullscreenExitButton = GObject.registerClass(
+class FullscreenExitButton extends St.Button {
+    _init(onClicked) {
+        super._init({
+            style_class: 'touch-sidebar-fs-exit',
+            reactive: true,
+            can_focus: true,
+            track_hover: true,
+            accessible_name: _('Exit Fullscreen'),
+            child: new St.Icon({
+                icon_name: 'view-restore-symbolic',
+                icon_size: 28,
+                style_class: 'touch-sidebar-icon',
+            }),
+        });
+        this.connect('clicked', () => onClicked());
+        this.hide();
+    }
+
+    placeOn(monitor) {
+        this.set_size(FS_EXIT_SIZE, FS_EXIT_SIZE);
+        this.set_position(
+            monitor.x + FS_EXIT_MARGIN,
+            monitor.y + monitor.height - FS_EXIT_SIZE - FS_EXIT_MARGIN
+        );
+    }
+});
+
 // ─── Resize Handle ─────────────────────────────────────────────────────────────
 
 const ResizeHandle = GObject.registerClass(
@@ -287,6 +345,8 @@ class TouchSideBar extends St.BoxLayout {
         this._settings = settings;
         this._ext = extensionObject;
         this._visible = false;
+        this._suppressed = false; // true while a window is fullscreened by the sidebar
+        this._strutsTracked = false;
         this._currentWidth = settings.get_int('sidebar-width');
 
         // ── Scroll container for buttons ──────────────────────
@@ -309,6 +369,7 @@ class TouchSideBar extends St.BoxLayout {
         this._resizeHandle = new ResizeHandle(this);
 
         this._rebuildLayout();
+        this._applyAppearance();
 
         // ── Start hidden ───────────────────────────────────────
         this.hide();
@@ -327,6 +388,9 @@ class TouchSideBar extends St.BoxLayout {
         this._settingsChangedId = settings.connect('changed', (_s, key) => {
             if (key === 'sidebar-on-right' || key === 'sidebar-width' || key === 'actions') {
                 this._rebuildLayout();
+            }
+            if (key === 'button-alignment' || key === 'sidebar-color') {
+                this._applyAppearance();
             }
             if (key === 'sidebar-width') {
                 this._currentWidth = settings.get_int('sidebar-width');
@@ -430,6 +494,21 @@ class TouchSideBar extends St.BoxLayout {
         }
     }
 
+    _applyAppearance() {
+        // Background colour (validated so it can't inject extra CSS)
+        const color = this._settings.get_string('sidebar-color');
+        this.set_style(isSafeCssColor(color) ? `background-color: ${color};` : '');
+
+        // Vertical alignment of the button group
+        const alignMap = {
+            top: Clutter.ActorAlign.START,
+            middle: Clutter.ActorAlign.CENTER,
+            bottom: Clutter.ActorAlign.END,
+        };
+        this._scrollView.y_align =
+            alignMap[this._settings.get_string('button-alignment')] ?? Clutter.ActorAlign.START;
+    }
+
     _applyWidth() {
         const w = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, this._currentWidth));
         this.set_width(w);
@@ -461,21 +540,40 @@ class TouchSideBar extends St.BoxLayout {
 
     // ── Show / Hide ───────────────────────────────────────────────────────────
 
+    // While the sidebar is visible it reserves screen space (struts) so windows
+    // sit beside it on the same plane instead of underneath / on top of it.
+    _setStruts(enabled) {
+        if (enabled === this._strutsTracked) return;
+        this._strutsTracked = enabled;
+        Main.layoutManager.untrackChrome(this);
+        Main.layoutManager.trackChrome(this, {
+            affectsStruts: enabled,
+            trackFullscreen: false,
+        });
+    }
+
+    setSuppressed(suppressed) {
+        this._suppressed = suppressed;
+    }
+
     _hideSidebar() {
         if (!this._visible) return;
         this._visible = false;
+        this._setStruts(false);
         this.ease({
             opacity: 0,
             duration: 200,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onComplete: () => { this.hide(); },
+            onComplete: () => { if (!this._visible) this.hide(); },
         });
     }
 
     _showSidebar() {
-        if (this._visible) return;
+        if (this._visible || this._suppressed) return;
         this._visible = true;
+        this._positionSidebar();
         this.show();
+        this._setStruts(true);
         this.ease({
             opacity: 255,
             duration: 200,
@@ -494,6 +592,10 @@ class TouchSideBar extends St.BoxLayout {
 
     updatePosition() {
         this._positionSidebar();
+    }
+
+    get isShown() {
+        return this._visible;
     }
 
     destroy() {
@@ -538,10 +640,8 @@ class TouchSideBarIndicator extends PanelMenu.Button {
         });
         this.add_child(icon);
 
-        // ── Toggle sidebar ────────────────────────────────────
-        const toggleItem = new PopupMenu.PopupMenuItem(_('Toggle Sidebar'));
-        toggleItem.connect('activate', () => sidebar.toggleVisibility());
-        this.menu.addMenuItem(toggleItem);
+        // Primary click / tap toggles the sidebar immediately (see vfunc_event).
+        // The menu below is opened with a secondary (right) click.
 
         // ── Switch side ───────────────────────────────────────
         const switchSide = new PopupMenu.PopupMenuItem(
@@ -562,6 +662,28 @@ class TouchSideBarIndicator extends PanelMenu.Button {
             this._ext?.openPreferences();
         });
         this.menu.addMenuItem(prefsItem);
+    }
+
+    vfunc_event(event) {
+        const type = event.type();
+        if (type === Clutter.EventType.BUTTON_PRESS) {
+            // Touch taps are handled via TOUCH_BEGIN; skip the emulated duplicate.
+            if (event.get_flags() & Clutter.EventFlags.POINTER_EMULATED)
+                return Clutter.EVENT_STOP;
+            if (event.get_button() === Clutter.BUTTON_SECONDARY) {
+                this.menu.toggle();
+            } else {
+                this.menu.close();
+                this._sidebar.toggleVisibility();
+            }
+            return Clutter.EVENT_STOP;
+        }
+        if (type === Clutter.EventType.TOUCH_BEGIN) {
+            this.menu.close();
+            this._sidebar.toggleVisibility();
+            return Clutter.EVENT_STOP;
+        }
+        return Clutter.EVENT_PROPAGATE;
     }
 
     setExtension(ext) {

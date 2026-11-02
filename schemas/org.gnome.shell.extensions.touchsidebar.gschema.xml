@@ -20,6 +20,28 @@
       <description>Width of the sidebar panel in pixels (48–400).</description>
     </key>
 
+    <key name="button-alignment" type="s">
+      <choices>
+        <choice value='top'/>
+        <choice value='middle'/>
+        <choice value='bottom'/>
+      </choices>
+      <default>'top'</default>
+      <summary>Vertical alignment of the sidebar buttons</summary>
+      <description>
+        Where the buttons are aligned inside the sidebar: top, middle or bottom.
+      </description>
+    </key>
+
+    <key name="sidebar-color" type="s">
+      <default>'rgba(30, 30, 30, 0.92)'</default>
+      <summary>Sidebar background color</summary>
+      <description>
+        CSS color of the sidebar background (hex such as "#1e1e1e", or
+        rgb()/rgba(), or a named color).
+      </description>
+    </key>
+
     <!-- ── Actions ─────────────────────────────────────────────── -->
     <key name="actions" type="s">
       <default>'[]'</default>

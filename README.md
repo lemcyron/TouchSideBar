@@ -12,7 +12,12 @@ inconvenient.
 |---|---|
 | **Left / Right placement** | Toggle the sidebar to either edge from the panel menu or Preferences |
 | **Resizable** | Drag the resize handle to any width between 48 px and 400 px |
-| **Auto-hide** | Automatically fades out when any window on the active workspace overlaps the sidebar area, and fades back in when the overlap clears |
+| **One-click toggle** | Clicking / tapping the panel icon immediately shows or hides the sidebar (right-click opens the menu) |
+| **Same plane as windows** | While visible, the sidebar reserves screen space so app windows sit beside it, never above or below it |
+| **Sidebar fullscreen** | The Fullscreen button fullscreens the focused window, hides the sidebar, and shows a small floating button at the lower-left to exit fullscreen |
+| **Tablet mode** | The sidebar appears automatically when the device enters touch/tablet mode (e.g. a convertible Chromebook folded to tablet) and hides when it leaves |
+| **Button alignment** | Align the buttons to the top, middle, or bottom of the sidebar |
+| **Sidebar color** | Pick any sidebar background color (including transparency) |
 | **Customizable buttons** | Add, remove, reorder, and fully edit every action button from Preferences |
 | **Icon customization** | Each button has its own icon name (any GNOME symbolic icon) and an independent CSS color value |
 | **Preferences window** | Full GTK4 + libadwaita preferences window accessible from the panel menu |
@@ -120,7 +125,8 @@ gnome-extensions prefs touchsidebar@gnome-extension
 ### General tab
 - **Sidebar Side** – toggle between Left and Right
 - **Sidebar Width** – numeric spin button (48–400 px)
-- **Auto-hide** – enable/disable overlap detection
+- **Button Alignment** – Top / Middle / Bottom
+- **Sidebar Color** – background color picker
 
 ### Actions tab
 Every button in the sidebar corresponds to one row here:

@@ -14,6 +14,7 @@ import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk';
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
+import Gdk from 'gi://Gdk';
 
 import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
@@ -281,6 +282,47 @@ export default class TouchSideBarPreferences extends ExtensionPreferences {
         });
         widthRow.add_suffix(widthSpin);
         layoutGroup.add(widthRow);
+
+        // Button alignment
+        const ALIGNMENTS = [
+            { id: 'top', label: _('Top') },
+            { id: 'middle', label: _('Middle') },
+            { id: 'bottom', label: _('Bottom') },
+        ];
+        const alignRow = new Adw.ComboRow({
+            title: _('Button Alignment'),
+            subtitle: _('Where the buttons sit inside the sidebar'),
+        });
+        const alignModel = new Gtk.StringList();
+        ALIGNMENTS.forEach(a => alignModel.append(a.label));
+        alignRow.set_model(alignModel);
+        const currentAlign = ALIGNMENTS.findIndex(a => a.id === settings.get_string('button-alignment'));
+        alignRow.set_selected(currentAlign >= 0 ? currentAlign : 0);
+        alignRow.connect('notify::selected', () => {
+            const a = ALIGNMENTS[alignRow.get_selected()];
+            if (a) settings.set_string('button-alignment', a.id);
+        });
+        layoutGroup.add(alignRow);
+
+        // Sidebar color
+        const sbColorRow = new Adw.ActionRow({
+            title: _('Sidebar Color'),
+            subtitle: _('Background color of the sidebar'),
+        });
+        const sbColorDialog = new Gtk.ColorDialog({ title: _('Sidebar color'), with_alpha: true });
+        const sbColorButton = new Gtk.ColorDialogButton({
+            valign: Gtk.Align.CENTER,
+            dialog: sbColorDialog,
+        });
+        const initialRgba = new Gdk.RGBA();
+        if (!initialRgba.parse(settings.get_string('sidebar-color')))
+            initialRgba.parse('rgba(30, 30, 30, 0.92)');
+        sbColorButton.set_rgba(initialRgba);
+        sbColorButton.connect('notify::rgba', () => {
+            settings.set_string('sidebar-color', sbColorButton.get_rgba().to_string());
+        });
+        sbColorRow.add_suffix(sbColorButton);
+        layoutGroup.add(sbColorRow);
 
         // ═══════════════════════════════════════════════════════
         // PAGE 2 – Actions
