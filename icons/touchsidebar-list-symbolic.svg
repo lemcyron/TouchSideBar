@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Page outline with a solid folded corner -->
+  <path fill="#bebebe" fill-rule="evenodd" d="M3 1h6.5L13 4.5V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zm0 1v12h9V5H9V2H3z"/>
+  <!-- List: three bullets with lines -->
+  <rect fill="#bebebe" x="4" y="6.5" width="1" height="1"/>
+  <rect fill="#bebebe" x="6" y="6.5" width="4" height="1"/>
+  <rect fill="#bebebe" x="4" y="9" width="1" height="1"/>
+  <rect fill="#bebebe" x="6" y="9" width="5" height="1"/>
+  <rect fill="#bebebe" x="4" y="11.5" width="1" height="1"/>
+  <rect fill="#bebebe" x="6" y="11.5" width="4" height="1"/>
+</svg>

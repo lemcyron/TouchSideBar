@@ -83,17 +83,9 @@ const SHOW_WHEN_OPTIONS = [
 
 function _defaultActions() {
     return [
-        { type: 'prev-workspace',  label: 'Prev WS',    icon: 'go-previous-symbolic',         iconColor: '', enabled: true },
-        { type: 'next-workspace',  label: 'Next WS',    icon: 'go-next-symbolic',              iconColor: '', enabled: true },
         { type: 'overview',        label: 'Overview',   icon: 'view-grid-symbolic',            iconColor: '', enabled: true },
-        { type: 'fullscreen',      label: 'Fullscreen', icon: 'view-fullscreen-symbolic',      iconColor: '', enabled: true },
-        { type: 'power-lock',      label: 'Lock',       icon: 'system-lock-screen-symbolic',   iconColor: '', enabled: true },
-        { type: 'power-logout',    label: 'Logout',     icon: 'system-log-out-symbolic',       iconColor: '', enabled: true },
-        { type: 'power-suspend',   label: 'Suspend',    icon: 'weather-clear-night-symbolic',  iconColor: '', enabled: true },
-        { type: 'power-reboot',    label: 'Reboot',     icon: 'system-reboot-symbolic',        iconColor: '', enabled: true },
-        { type: 'power-shutdown',  label: 'Shutdown',   icon: 'system-shutdown-symbolic',      iconColor: '#cc3333', enabled: true },
-        { type: 'copy',            label: 'Copy',       icon: 'edit-copy-symbolic',            iconColor: '', enabled: true },
-        { type: 'paste',           label: 'Paste',      icon: 'edit-paste-symbolic',           iconColor: '', enabled: true },
+        { type: 'prev-workspace',  label: 'Prev WS',    icon: 'go-previous-symbolic',          iconColor: '', enabled: true },
+        { type: 'next-workspace',  label: 'Next WS',    icon: 'go-next-symbolic',              iconColor: '', enabled: true },
     ];
 }
 
@@ -111,13 +103,24 @@ const ActionRow = GObject.registerClass({
     },
 }, class ActionRow extends Adw.ExpanderRow {
     _init(action) {
+        // The row's own enable switch is not used: it would also lock the row
+        // closed while off. A separate switch keeps a disabled action editable.
         super._init({
             title: _actionSummary(action),
-            show_enable_switch: true,
-            enable_expansion: action.enabled !== false,
         });
 
         this._action = { ...action };
+
+        this._enabledSwitch = new Gtk.Switch({
+            active: action.enabled !== false,
+            valign: Gtk.Align.CENTER,
+            tooltip_text: _('Show this button in the sidebar'),
+        });
+        this._enabledSwitch.connect('notify::active', () => {
+            this._action.enabled = this._enabledSwitch.active;
+            this.emit('changed');
+        });
+        this.add_suffix(this._enabledSwitch);
 
         this._dragHandle = new Gtk.Image({
             icon_name: 'list-drag-handle-symbolic',
@@ -128,11 +131,6 @@ const ActionRow = GObject.registerClass({
         this.add_prefix(this._dragHandle);
 
         this._buildContent();
-
-        this.connect('notify::enable-expansion', () => {
-            this._action.enabled = this.enable_expansion;
-            this.emit('changed');
-        });
     }
 
     _buildContent() {

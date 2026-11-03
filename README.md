@@ -1,4 +1,4 @@
-# TouchSideBar – GNOME Shell Extension
+﻿# TouchSideBar – GNOME Shell Extension
 
 A **touch-friendly sidebar** for GNOME Shell 45–51. Designed to be
 useful on touchscreen devices where reaching the top panel or corners is
@@ -96,8 +96,9 @@ On **Wayland**: log out and back in.
 ```bash
 UUID="touchsidebar@gnome-extension"
 DEST="$HOME/.local/share/gnome-shell/extensions/$UUID"
-mkdir -p "$DEST/schemas"
+mkdir -p "$DEST/schemas" "$DEST/icons"
 cp metadata.json extension.js prefs.js stylesheet.css "$DEST/"
+cp icons/*.svg "$DEST/icons/"
 cp schemas/*.xml "$DEST/schemas/"
 glib-compile-schemas "$DEST/schemas/"
 gnome-extensions enable "$UUID"
@@ -122,6 +123,7 @@ touchsidebar@gnome-extension/
 ├── extension.js         Main shell code (sidebar, actions, panel button)
 ├── prefs.js             GTK4 preferences window
 ├── stylesheet.css       GNOME Shell CSS styling
+├── icons/               Panel icon (page with a list)
 ├── install.sh           One-step install helper
 ├── README.md            This file
 └── schemas/
@@ -150,7 +152,7 @@ gnome-extensions prefs touchsidebar@gnome-extension
 
 ### Actions tab
 Every button in the sidebar corresponds to one row here:
-- **Enable/disable** the button with the row toggle switch
+- **Enable/disable** the button with the switch on the row. A disabled button stays editable and deletable: the row can still be expanded
 - **Expand** the row to edit:
   - Action type (dropdown)
   - Show When: Always, only when the focused workspace has a window open, or only when it has none (the sidebar updates as you switch workspaces and open/close windows)
@@ -163,7 +165,7 @@ Every button in the sidebar corresponds to one row here:
 - **Delete Action** removes the button
 
 Use **Add New Action Button** at the bottom to append a new button of any type.  
-**Reset Actions to Defaults** restores the factory button list.
+**Reset Actions to Defaults** restores the factory button list (Overview, Previous Workspace and Next Workspace), which is also what a fresh install starts with.
 
 ---
 
@@ -182,3 +184,5 @@ Use **Add New Action Button** at the bottom to append a new button of any type.
 ## License
 
 MIT License — see individual source files for copyright headers.
+
+

@@ -30,6 +30,7 @@ fi
 echo "→ Creating install directory: $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$SCHEMA_DIR"
+mkdir -p "$INSTALL_DIR/icons"
 
 # ── Copy all extension files ─────────────────────────────────────────────────
 echo "→ Copying extension files…"
@@ -37,6 +38,7 @@ cp -f metadata.json  "$INSTALL_DIR/"
 cp -f extension.js   "$INSTALL_DIR/"
 cp -f prefs.js       "$INSTALL_DIR/"
 cp -f stylesheet.css "$INSTALL_DIR/"
+cp -f icons/*.svg    "$INSTALL_DIR/icons/"
 cp -f schemas/org.gnome.shell.extensions.touchsidebar.gschema.xml "$SCHEMA_DIR/"
 
 # ── Compile GSettings schema ─────────────────────────────────────────────────

@@ -828,17 +828,9 @@ class TouchSideBar extends St.BoxLayout {
 
 function _defaultActions() {
     return [
-        { type: 'prev-workspace',   label: 'Prev WS',   icon: 'go-previous-symbolic',          iconColor: '',       enabled: true },
-        { type: 'next-workspace',   label: 'Next WS',   icon: 'go-next-symbolic',               iconColor: '',       enabled: true },
-        { type: 'overview',         label: 'Overview',  icon: 'view-grid-symbolic',             iconColor: '',       enabled: true },
-        { type: 'fullscreen',       label: 'Fullscreen',icon: 'view-fullscreen-symbolic',       iconColor: '',       enabled: true },
-        { type: 'power-lock',       label: 'Lock',      icon: 'system-lock-screen-symbolic',    iconColor: '',       enabled: true },
-        { type: 'power-logout',     label: 'Logout',    icon: 'system-log-out-symbolic',        iconColor: '',       enabled: true },
-        { type: 'power-suspend',    label: 'Suspend',   icon: 'weather-clear-night-symbolic',   iconColor: '',       enabled: true },
-        { type: 'power-reboot',     label: 'Reboot',    icon: 'system-reboot-symbolic',         iconColor: '',       enabled: true },
-        { type: 'power-shutdown',   label: 'Shutdown',  icon: 'system-shutdown-symbolic',       iconColor: '#cc3333', enabled: true },
-        { type: 'copy',             label: 'Copy',      icon: 'edit-copy-symbolic',             iconColor: '',       enabled: true },
-        { type: 'paste',            label: 'Paste',     icon: 'edit-paste-symbolic',            iconColor: '',       enabled: true },
+        { type: 'overview',         label: 'Overview',  icon: 'view-grid-symbolic',             iconColor: '', enabled: true },
+        { type: 'prev-workspace',   label: 'Prev WS',   icon: 'go-previous-symbolic',           iconColor: '', enabled: true },
+        { type: 'next-workspace',   label: 'Next WS',   icon: 'go-next-symbolic',               iconColor: '', enabled: true },
     ];
 }
 
@@ -846,15 +838,18 @@ function _defaultActions() {
 
 const TouchSideBarIndicator = GObject.registerClass(
 class TouchSideBarIndicator extends PanelMenu.Button {
-    _init(sidebar, settings) {
+    _init(sidebar, settings, iconFile) {
         super._init(0.0, 'TouchSideBar');
         this._sidebar = sidebar;
         this._settings = settings;
 
-        const icon = new St.Icon({
-            icon_name: 'view-sidebar-symbolic',
-            style_class: 'system-status-icon',
-        });
+        // Page-with-a-list icon shipped with the extension; falls back to a
+        // themed icon if the file is missing.
+        const icon = new St.Icon({ style_class: 'system-status-icon' });
+        if (iconFile.query_exists(null))
+            icon.gicon = new Gio.FileIcon({ file: iconFile });
+        else
+            icon.icon_name = 'view-list-symbolic';
         this.add_child(icon);
 
         // Primary click / tap toggles the sidebar immediately (see vfunc_event).
@@ -1254,7 +1249,8 @@ export default class TouchSideBarExtension extends Extension {
         }
 
         // ── Panel indicator ───────────────────────────────────
-        this._indicator = new TouchSideBarIndicator(this._sidebar, this._settings);
+        this._indicator = new TouchSideBarIndicator(this._sidebar, this._settings,
+            Gio.File.new_for_path(GLib.build_filenamev([this.path, 'icons', 'touchsidebar-list-symbolic.svg'])));
         this._indicator.setExtension(this);
         Main.panel.addToStatusArea('touchsidebar', this._indicator);
 
