@@ -89,6 +89,8 @@
           icon       – symbolic icon name (string)
           iconColor  – CSS colour string, e.g. "#ff0000" (string)
           enabled    – whether the button is shown (boolean)
+          showWhen   – "always" (default), "has-window" or "no-window": show the
+                       item only when the focused workspace has / has no window open
           command    – shell command for terminal-command / system-command
           appId      – .desktop id for app-shortcut actions
           shortcut   – key combination for keyboard-shortcut actions, e.g. "Ctrl+Shift+T"

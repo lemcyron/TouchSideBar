@@ -150,6 +150,7 @@ Every button in the sidebar corresponds to one row here:
 - **Enable/disable** the button with the row toggle switch
 - **Expand** the row to edit:
   - Action type (dropdown)
+  - Show When: Always, only when the focused workspace has a window open, or only when it has none (the sidebar updates as you switch workspaces and open/close windows)
   - Button label
   - Icon (popup picker with previews and search; type a name and press Enter for any other icon in the system theme)
   - Icon color (text entry or color picker)

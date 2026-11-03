@@ -34,6 +34,14 @@ const SIDEBAR_CHROME_X = 16;
 // Default spacing around each icon inside its button (matches the schema).
 const DEFAULT_PADDING = { top: 10, bottom: 10, left: 6, right: 6 };
 
+/** True if the active workspace has at least one normal window open. */
+function activeWorkspaceHasWindow() {
+    const wsManager = global.workspace_manager ?? global.workspaceManager;
+    const workspace = wsManager?.get_active_workspace?.();
+    if (!workspace) return false;
+    return global.display.get_tab_list(Meta.TabList.NORMAL, workspace).length > 0;
+}
+
 /**
  * Derive icon/label sizes from the sidebar width so the content scales with
  * it (28 px icon / 10 px label at the default 80 px width). The icon is also
@@ -617,7 +625,7 @@ class TouchSideBar extends St.BoxLayout {
     _rebuildLayout() {
         // Remove existing children
         this.remove_all_children();
-        this._buttonBox.remove_all_children();
+        this._buttonBox.destroy_all_children();
         this._buildButtons();
         this.add_child(this._topFiller);
         this.add_child(this._scrollView);
@@ -627,7 +635,25 @@ class TouchSideBar extends St.BoxLayout {
         this._positionSidebar();
     }
 
+    // Whether an item should be visible given its `showWhen` setting and
+    // whether the focused workspace currently has a window.
+    _isItemVisible(mode, hasWindow) {
+        if (mode === 'has-window') return hasWindow;
+        if (mode === 'no-window') return !hasWindow;
+        return true;
+    }
+
+    // Re-evaluate every conditional item against the active workspace.
+    refreshWindowVisibility() {
+        if (!this._conditionalItems || this._conditionalItems.length === 0)
+            return;
+        const hasWindow = activeWorkspaceHasWindow();
+        for (const { widget, mode } of this._conditionalItems)
+            widget.visible = this._isItemVisible(mode, hasWindow);
+    }
+
     _buildButtons() {
+        this._conditionalItems = [];
         const actionsJson = this._settings.get_string('actions');
         let actions = [];
         try {
@@ -648,16 +674,22 @@ class TouchSideBar extends St.BoxLayout {
             right: s.get_int('icon-padding-right'),
         });
 
+        const addItem = (widget, action) => {
+            this._buttonBox.add_child(widget);
+            if (action.showWhen === 'has-window' || action.showWhen === 'no-window')
+                this._conditionalItems.push({ widget, mode: action.showWhen });
+        };
+
         for (const action of actions) {
             if (!action.enabled && action.enabled !== undefined) continue;
 
             // Layout-only items: not clickable, just organise the look.
             if (action.type === 'spacer') {
                 const size = Math.max(4, Math.min(400, parseInt(action.size, 10) || 24));
-                this._buttonBox.add_child(new St.Widget({
+                addItem(new St.Widget({
                     style_class: 'touch-sidebar-spacer',
                     height: size,
-                }));
+                }), action);
                 continue;
             }
             if (action.type === 'separator') {
@@ -668,13 +700,15 @@ class TouchSideBar extends St.BoxLayout {
                 });
                 if (isSafeCssColor(action.iconColor))
                     line.set_style(`background-color: ${action.iconColor};`);
-                this._buttonBox.add_child(line);
+                addItem(line, action);
                 continue;
             }
 
             const btn = new TouchActionButton(action, this._ext, showLabels, metrics);
-            this._buttonBox.add_child(btn);
+            addItem(btn, action);
         }
+
+        this.refreshWindowVisibility();
     }
 
     _applyAppearance() {
@@ -1226,6 +1260,13 @@ export default class TouchSideBarExtension extends Extension {
 
         this._syncAppFullscreen();
 
+        // ── Show/hide actions depending on windows on the active workspace ─
+        this._wmSignalIds = ['switch-workspace', 'map', 'destroy', 'minimize', 'unminimize']
+            .map(name => global.window_manager.connect(name, () => this._queueWindowRefresh()));
+        // 'restacked' also covers windows moved to another workspace.
+        this._displaySignalIds = ['notify::focus-window', 'restacked']
+            .map(name => global.display.connect(name, () => this._queueWindowRefresh()));
+
         // ── Reposition on monitor change ──────────────────────
         this._monitorsChangedId = Main.layoutManager.connect(
             'monitors-changed', () => {
@@ -1236,7 +1277,28 @@ export default class TouchSideBarExtension extends Extension {
 
     }
 
+    // Deferred so the window list already reflects the change that fired the signal.
+    _queueWindowRefresh() {
+        if (this._refreshIdleId)
+            return;
+        this._refreshIdleId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._refreshIdleId = 0;
+            this._sidebar?.refreshWindowVisibility();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
     disable() {
+        if (this._refreshIdleId) {
+            GLib.source_remove(this._refreshIdleId);
+            this._refreshIdleId = 0;
+        }
+        for (const id of this._wmSignalIds ?? [])
+            global.window_manager.disconnect(id);
+        this._wmSignalIds = null;
+        for (const id of this._displaySignalIds ?? [])
+            global.display.disconnect(id);
+        this._displaySignalIds = null;
         this._exitSidebarFullscreen();
         if (this._seat && this._touchModeId)
             this._seat.disconnect(this._touchModeId);

@@ -74,6 +74,12 @@ const ICON_CHOICES = [
     'zoom-in-symbolic', 'zoom-out-symbolic', 'dialog-information-symbolic', 'dialog-warning-symbolic',
 ];
 
+const SHOW_WHEN_OPTIONS = [
+    { id: 'always',     label: 'Always' },
+    { id: 'has-window', label: 'When the workspace has a window open' },
+    { id: 'no-window',  label: 'When the workspace has no window open' },
+];
+
 function _defaultActions() {
     return [
         { type: 'prev-workspace',  label: 'Prev WS',    icon: 'go-previous-symbolic',         iconColor: '', enabled: true },
@@ -178,7 +184,23 @@ const ActionRow = GObject.registerClass({
             this.emit('changed');
         });
 
+        // ── Visibility (depends on windows in the focused workspace) ──
+        const showWhenRow = new Adw.ComboRow({
+            title: _('Show When'),
+            subtitle: _('Depends on whether the focused workspace has a window open'),
+        });
+        const showWhenModel = new Gtk.StringList();
+        SHOW_WHEN_OPTIONS.forEach(o => showWhenModel.append(_(o.label)));
+        showWhenRow.set_model(showWhenModel);
+        const showWhenIdx = SHOW_WHEN_OPTIONS.findIndex(o => o.id === this._action.showWhen);
+        showWhenRow.set_selected(showWhenIdx >= 0 ? showWhenIdx : 0);
+        showWhenRow.connect('notify::selected', () => {
+            this._action.showWhen = SHOW_WHEN_OPTIONS[showWhenRow.get_selected()]?.id || 'always';
+            this.emit('changed');
+        });
+
         this.add_row(typeRow);
+        this.add_row(showWhenRow);
         this.add_row(labelRow);
         this.add_row(iconRow);
 
