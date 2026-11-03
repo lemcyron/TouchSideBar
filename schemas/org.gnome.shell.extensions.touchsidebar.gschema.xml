@@ -50,6 +50,34 @@
       </description>
     </key>
 
+    <key name="icon-padding-top" type="i">
+      <default>10</default>
+      <range min="0" max="64"/>
+      <summary>Space above each icon</summary>
+      <description>Padding in pixels above the icon inside each button.</description>
+    </key>
+
+    <key name="icon-padding-bottom" type="i">
+      <default>10</default>
+      <range min="0" max="64"/>
+      <summary>Space below each icon</summary>
+      <description>Padding in pixels below the icon/label inside each button.</description>
+    </key>
+
+    <key name="icon-padding-left" type="i">
+      <default>6</default>
+      <range min="0" max="64"/>
+      <summary>Space left of each icon</summary>
+      <description>Padding in pixels to the left of the icon inside each button.</description>
+    </key>
+
+    <key name="icon-padding-right" type="i">
+      <default>6</default>
+      <range min="0" max="64"/>
+      <summary>Space right of each icon</summary>
+      <description>Padding in pixels to the right of the icon inside each button.</description>
+    </key>
+
     <!-- ── Actions ─────────────────────────────────────────────── -->
     <key name="actions" type="s">
       <default>'[]'</default>

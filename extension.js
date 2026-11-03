@@ -26,24 +26,27 @@ const SIDEBAR_MIN_WIDTH = 48;
 const SIDEBAR_MAX_WIDTH = 400;
 const LONG_PRESS_MS = 500; // panel icon long-press duration
 
-// Horizontal space the sidebar chrome takes around the buttons
-// (container padding + button-box padding + borders, see stylesheet.css).
-const SIDEBAR_CHROME_X = 14;
+// Horizontal space the sidebar chrome takes around the icon: sidebar
+// padding (8) + border (2) + button-box padding (4) + button border (2),
+// see stylesheet.css.
+const SIDEBAR_CHROME_X = 16;
+
+// Default spacing around each icon inside its button (matches the schema).
+const DEFAULT_PADDING = { top: 10, bottom: 10, left: 6, right: 6 };
 
 /**
- * Derive button/icon/label sizes from the sidebar width so the content
- * scales with it. Tuned so the default width (80 px) gives the stock
- * look: 28 px icon, 10 px label, 10/6 px button padding.
+ * Derive icon/label sizes from the sidebar width so the content scales with
+ * it (28 px icon / 10 px label at the default 80 px width). The icon is also
+ * limited so it still fits between the user's left/right padding.
  */
-function scaleMetrics(sidebarWidth) {
+function scaleMetrics(sidebarWidth, pad = DEFAULT_PADDING) {
     const available = Math.max(16, sidebarWidth - SIDEBAR_CHROME_X);
-    const iconSize = Math.max(16, Math.min(128, Math.round(available * 0.42)));
+    let iconSize = Math.max(16, Math.min(128, Math.round(available * 0.44)));
+    iconSize = Math.max(12, Math.min(iconSize, available - pad.left - pad.right));
     return {
         iconSize,
         fontSize: Math.max(8, Math.min(28, Math.round(iconSize * 0.36))),
-        padX: Math.max(2, Math.round(iconSize * 0.21)),
-        padY: Math.max(6, Math.round(iconSize * 0.36)),
-        radius: Math.max(6, Math.round(iconSize * 0.36)),
+        pad,
     };
 }
 
@@ -319,21 +322,14 @@ function executeAction(action, extensionObject) {
             if (action.command && action.command.trim() !== '')
                 spawnCommand(action.command);
             break;
-        case 'copy': {
-            const clipboard = St.Clipboard.get_default();
-            clipboard.get_text(St.ClipboardType.CLIPBOARD, (_clip, text) => {
-                // already in clipboard — just notify
-                Main.notify('TouchSideBar', _('Clipboard content ready'));
-            });
+        // Copy / paste send the standard shortcuts to the focused app through
+        // the virtual keyboard, which works on Wayland (xdotool does not).
+        case 'copy':
+            sendKeyCombo('Ctrl+C');
             break;
-        }
-        case 'paste': {
-            const clipboard = St.Clipboard.get_default();
-            clipboard.get_text(St.ClipboardType.CLIPBOARD, (_clip, text) => {
-                if (text) spawnCommand(`xdotool type --clearmodifiers -- ${GLib.shell_quote(text)}`);
-            });
+        case 'paste':
+            sendKeyCombo('Ctrl+V');
             break;
-        }
         case 'media-play-pause':
             mprisAction('PlayPause', 'audioplay');
             break;
@@ -388,11 +384,11 @@ class TouchActionButton extends St.Button {
         this._action = action;
         this._ext = extensionObject;
 
-        // Scale the button with the sidebar width. min-width is released so
-        // narrow sidebars can shrink the button below the stylesheet default.
+        // Only the padding is set inline; background, border and radius come
+        // from the stylesheet so hover/active states keep working.
+        const p = metrics.pad;
         this.set_style(
-            `min-width: 0; padding: ${metrics.padY}px ${metrics.padX}px; ` +
-            `border-radius: ${metrics.radius}px;`
+            `padding: ${p.top}px ${p.right}px ${p.bottom}px ${p.left}px;`
         );
 
         const box = new St.BoxLayout({
@@ -553,7 +549,8 @@ class TouchSideBar extends St.BoxLayout {
             // the rebuild below positions the sidebar using the new value.
             if (key === 'sidebar-width')
                 this._currentWidth = settings.get_int('sidebar-width');
-            if (key === 'sidebar-on-right' || key === 'sidebar-width' || key === 'actions' || key === 'show-action-labels') {
+            if (key === 'sidebar-on-right' || key === 'sidebar-width' || key === 'actions' ||
+                key === 'show-action-labels' || key.startsWith('icon-padding-')) {
                 this._rebuildLayout();
             }
             if (key === 'button-alignment' || key === 'sidebar-color') {
@@ -643,7 +640,13 @@ class TouchSideBar extends St.BoxLayout {
         }
 
         const showLabels = this._settings.get_boolean('show-action-labels');
-        const metrics = scaleMetrics(this._currentWidth);
+        const s = this._settings;
+        const metrics = scaleMetrics(this._currentWidth, {
+            top: s.get_int('icon-padding-top'),
+            bottom: s.get_int('icon-padding-bottom'),
+            left: s.get_int('icon-padding-left'),
+            right: s.get_int('icon-padding-right'),
+        });
 
         for (const action of actions) {
             if (!action.enabled && action.enabled !== undefined) continue;
@@ -704,6 +707,12 @@ class TouchSideBar extends St.BoxLayout {
         const onRight = this._settings.get_boolean('sidebar-on-right');
         const w = this._currentWidth;
         const panelHeight = Main.panel.height || (typeof Main.panel.get_height === 'function' ? Main.panel.get_height() : 32) || 32;
+
+        // Mirrors the shadow direction (see stylesheet.css)
+        if (onRight)
+            this.add_style_class_name('sidebar-right');
+        else
+            this.remove_style_class_name('sidebar-right');
 
         this.set_position(
             onRight ? monitor.x + monitor.width - w : monitor.x,
@@ -955,8 +964,15 @@ class EdgeSwipeZone extends St.Button {
         this.connect('motion-event', this._onMotion.bind(this));
         this.connect('touch-event', this._onTouch.bind(this));
 
-        settings.connect('changed::sidebar-on-right', () => this._reposition());
-        settings.connect('changed::sidebar-width', () => this._reposition());
+        this._sideChangedId = settings.connect('changed::sidebar-on-right', () => this._reposition());
+    }
+
+    destroy() {
+        if (this._sideChangedId) {
+            this._settings.disconnect(this._sideChangedId);
+            this._sideChangedId = null;
+        }
+        super.destroy();
     }
 
     _reposition() {
@@ -1131,7 +1147,7 @@ export default class TouchSideBarExtension extends Extension {
     _syncAppFullscreen() {
         if (!this._sidebar || this._fsWindow)
             return;
-        const inFs = !!Main.layoutManager.primaryMonitor?.inFullscreen;
+        const inFs = global.display.get_monitor_in_fullscreen(Main.layoutManager.primaryIndex);
 
         if (inFs && !this._appFsActive) {
             this._appFsActive = true;
@@ -1183,15 +1199,10 @@ export default class TouchSideBarExtension extends Extension {
         });
         this._swipeZone._reposition();
 
-        // Keep swipe zone repositioned alongside sidebar
-        this._swipeSideId = this._settings.connect('changed::sidebar-on-right', () => {
-            this._swipeZone._reposition();
-        });
-
         // ── Hide the sidebar while any app is fullscreen ──────
         this._appFsActive = false;
         this._appFsRestore = false;
-        this._fullscreenChangedId = Main.layoutManager.connect(
+        this._fullscreenChangedId = global.display.connect(
             'in-fullscreen-changed', () => this._syncAppFullscreen());
 
         // ── Floating "exit fullscreen" button ─────────────────
@@ -1223,10 +1234,6 @@ export default class TouchSideBarExtension extends Extension {
             }
         );
 
-        // ── Reposition when sidebar-on-right changes ──────────
-        this._sideChangedId = this._settings.connect('changed::sidebar-on-right', () => {
-            this._sidebar._positionSidebar();
-        });
     }
 
     disable() {
@@ -1241,7 +1248,7 @@ export default class TouchSideBarExtension extends Extension {
             this._fsExitButton = null;
         }
         if (this._fullscreenChangedId) {
-            Main.layoutManager.disconnect(this._fullscreenChangedId);
+            global.display.disconnect(this._fullscreenChangedId);
             this._fullscreenChangedId = null;
         }
         this._appFsActive = false;
@@ -1249,14 +1256,6 @@ export default class TouchSideBarExtension extends Extension {
         if (this._monitorsChangedId) {
             Main.layoutManager.disconnect(this._monitorsChangedId);
             this._monitorsChangedId = null;
-        }
-        if (this._sideChangedId) {
-            this._settings.disconnect(this._sideChangedId);
-            this._sideChangedId = null;
-        }
-        if (this._swipeSideId) {
-            this._settings.disconnect(this._swipeSideId);
-            this._swipeSideId = null;
         }
         if (this._indicator) {
             this._indicator.destroy();

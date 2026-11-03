@@ -12,7 +12,11 @@ inconvenient.
 |---|---|
 | **Left / Right placement** | Toggle the sidebar to either edge from the panel menu or Preferences |
 | **Adjustable width** | Set the width (48–400 px) in Preferences; it cannot be dragged |
+| **Scales with width** | Icons, labels and buttons resize automatically with the sidebar width |
+| **Icon spacing** | Top / bottom / left / right padding around the icons is configurable (applies to every button) |
 | **One-click toggle** | Clicking / tapping the panel icon immediately shows or hides the sidebar (right-click opens the menu) |
+| **Long-press to switch side** | Holding the panel icon for half a second moves the sidebar from left to right and back |
+| **Hides in fullscreen** | The sidebar hides while any app (e.g. a video player) is fullscreen on the primary monitor and returns afterwards |
 | **Same plane as windows** | While visible, the sidebar reserves screen space so app windows sit beside it, never above or below it |
 | **Sidebar fullscreen** | The Fullscreen button fullscreens the focused window, hides the sidebar, and shows a small floating button at the lower-left to exit fullscreen |
 | **Tablet mode** | The sidebar appears automatically when the device enters touch/tablet mode (e.g. a convertible Chromebook folded to tablet) and hides when it leaves |
@@ -20,7 +24,7 @@ inconvenient.
 | **Sidebar color** | Pick any sidebar background color (including transparency) |
 | **Toggle button labels** | Show or hide text labels beneath action button icons |
 | **Customizable buttons** | Add, remove, reorder, and fully edit every action button from Preferences |
-| **Icon customization** | Each button has its own icon name (any GNOME symbolic icon) and an independent CSS color value |
+| **Icon customization** | Each button has its own icon, chosen from a popup with previews (or typed by name), and an independent CSS color value |
 | **Preferences window** | Full GTK4 + libadwaita preferences window accessible from the panel menu |
 
 ---
@@ -47,8 +51,8 @@ inconvenient.
 | **Lock Screen** | `loginctl lock-session` |
 | **Terminal Command** | Runs any shell command via `bash -c` |
 | **System Command** | Runs any command directly (for non-interactive commands) |
-| **Copy** | Shows a notification that clipboard content is ready |
-| **Paste** | Types clipboard text at the current cursor position via `xdotool` |
+| **Copy** | Sends `Ctrl+C` to the focused app. Works on Wayland |
+| **Paste** | Sends `Ctrl+V` to the focused app. Works on Wayland |
 | **App Shortcut** | Launches any installed application by its `.desktop` ID |
 | **Keyboard Shortcut** | Sends a key combination (e.g. `Ctrl+Shift+T`, `Alt+Left`, `Super+D`, `F11`) to the focused app. Works on Wayland |
 | **Spacer** | Empty gap of configurable height, for grouping buttons |
@@ -59,9 +63,8 @@ inconvenient.
 
 ## Requirements
 
-- GNOME Shell **45, 46, 47, 48, or 51**
+- GNOME Shell **45 – 51** (developed for 51.1)
 - `glib-compile-schemas` (part of `glib2` / `libglib2.0-dev`)
-- `xdotool` — **only needed** if you use the Paste action on X11
 - `gnome-session` — for power/logout actions (standard on most distros)
 - `systemd` — for suspend/lock actions (standard on most distros)
 
@@ -140,6 +143,7 @@ gnome-extensions prefs touchsidebar@gnome-extension
 - **Button Alignment** – Top / Middle / Bottom
 - **Show Button Labels** – toggle text labels under action icons on/off
 - **Sidebar Color** – background color picker
+- **Icon Spacing** – top / bottom / left / right padding inside every action button
 
 ### Actions tab
 Every button in the sidebar corresponds to one row here:
@@ -147,7 +151,7 @@ Every button in the sidebar corresponds to one row here:
 - **Expand** the row to edit:
   - Action type (dropdown)
   - Button label
-  - Icon name (any `*-symbolic` name from the system icon theme)
+  - Icon (popup picker with previews and search; type a name and press Enter for any other icon in the system theme)
   - Icon color (text entry or color picker)
   - Command (for Terminal Command / System Command types)
   - App desktop ID (for App Shortcut type)
@@ -161,11 +165,13 @@ Use **Add New Action Button** at the bottom to append a new button of any type.
 
 ## Security Notes
 
-- Terminal and System commands are launched with `GLib.spawn_command_line_async` 
-  — they run as your user, not as root.
+- Terminal and System commands are run through `/bin/sh -c` (Terminal Command
+  is quoted and run through `bash -c`) — they run as your user, not as root.
+  Only configure commands you trust: anyone who can change the extension's
+  settings can make the sidebar run them.
+- Colors from settings are validated before being used in styles.
 - No network access is performed by the extension.
 - No credentials, tokens, or personal data are stored.
-- Paste action uses `xdotool type` — use only on trusted text.
 
 ---
 

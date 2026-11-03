@@ -4,17 +4,17 @@
  * Full GTK4 + libadwaita preferences window.
  * Users can:
  *   • Toggle sidebar side (left / right)
- *   • Set sidebar width
- *   • Enable / disable auto-hide
+ *   • Set sidebar width, button alignment, labels and background color
  *   • Add, remove, reorder, and edit action buttons
- *   • Choose action type, label, icon name, and icon color for each button
+ *   • Set the icon spacing (top / bottom / left / right) used by every button
+ *   • Choose action type, label, icon (popup picker), and icon color for each button
  */
 
 import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk';
 import Adw from 'gi://Adw';
-import Gio from 'gi://Gio';
 import Gdk from 'gi://Gdk';
+import Pango from 'gi://Pango';
 
 import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
@@ -310,7 +310,7 @@ const ActionRow = GObject.registerClass({
             box.append(new Gtk.Label({
                 label: name.replace(/-symbolic$/, ''),
                 css_classes: ['caption'],
-                ellipsize: 3, // Pango.EllipsizeMode.END
+                ellipsize: Pango.EllipsizeMode.END,
                 max_width_chars: 14,
             }));
             const btn = new Gtk.Button({
@@ -525,6 +525,33 @@ export default class TouchSideBarPreferences extends ExtensionPreferences {
         });
         sbColorRow.add_suffix(sbColorButton);
         layoutGroup.add(sbColorRow);
+
+        // Icon spacing (applies to every action button)
+        const spacingGroup = new Adw.PreferencesGroup({
+            title: _('Icon Spacing'),
+            description: _('Space around the icon inside every action button, in pixels.'),
+        });
+        generalPage.add(spacingGroup);
+
+        const SPACING_KEYS = [
+            { key: 'icon-padding-top', title: _('Top') },
+            { key: 'icon-padding-bottom', title: _('Bottom') },
+            { key: 'icon-padding-left', title: _('Left') },
+            { key: 'icon-padding-right', title: _('Right') },
+        ];
+        for (const { key, title } of SPACING_KEYS) {
+            const spinRow = new Adw.SpinRow({
+                title,
+                adjustment: new Gtk.Adjustment({
+                    lower: 0, upper: 64, step_increment: 1, page_increment: 4,
+                    value: settings.get_int(key),
+                }),
+            });
+            spinRow.connect('notify::value', () => {
+                settings.set_int(key, Math.round(spinRow.get_value()));
+            });
+            spacingGroup.add(spinRow);
+        }
 
         // ═══════════════════════════════════════════════════════
         // PAGE 2 – Actions
