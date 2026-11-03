@@ -24,6 +24,7 @@ inconvenient.
 | **Sidebar color** | Pick any sidebar background color (including transparency) |
 | **Toggle button labels** | Show or hide text labels beneath action button icons |
 | **Customizable buttons** | Add, remove, reorder, and fully edit every action button from Preferences |
+| **Export / Import** | Save every customization (layout, appearance, all actions) to a text file and load it back from Preferences |
 | **Icon customization** | Each button has its own icon, chosen from a popup with previews (or typed by name), and an independent CSS color value |
 | **Preferences window** | Full GTK4 + libadwaita preferences window accessible from the panel menu |
 
@@ -144,6 +145,8 @@ gnome-extensions prefs touchsidebar@gnome-extension
 - **Show Button Labels** – toggle text labels under action icons on/off
 - **Sidebar Color** – background color picker
 - **Icon Spacing** – top / bottom / left / right padding inside every action button
+- **Backup** – **Export** all customizations to a JSON text file, or **Import** them back. Imports are validated (unknown fields are dropped, values are range-checked), and you are asked to confirm if the file contains shell-command actions. Settings missing from a file are left unchanged.
+
 
 ### Actions tab
 Every button in the sidebar corresponds to one row here:

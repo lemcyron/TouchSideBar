@@ -11,6 +11,7 @@
  */
 
 import GObject from 'gi://GObject';
+import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 import Adw from 'gi://Adw';
 import Gdk from 'gi://Gdk';
@@ -76,8 +77,8 @@ const ICON_CHOICES = [
 
 const SHOW_WHEN_OPTIONS = [
     { id: 'always',     label: 'Always' },
-    { id: 'has-window', label: 'When the workspace has a window open' },
-    { id: 'no-window',  label: 'When the workspace has no window open' },
+    { id: 'has-window', label: 'Window open' },
+    { id: 'no-window',  label: 'No window open' },
 ];
 
 function _defaultActions() {
@@ -187,7 +188,7 @@ const ActionRow = GObject.registerClass({
         // ── Visibility (depends on windows in the focused workspace) ──
         const showWhenRow = new Adw.ComboRow({
             title: _('Show When'),
-            subtitle: _('Depends on whether the focused workspace has a window open'),
+            tooltip_text: _('Show this item depending on whether the focused workspace has a window open'),
         });
         const showWhenModel = new Gtk.StringList();
         SHOW_WHEN_OPTIONS.forEach(o => showWhenModel.append(_(o.label)));
@@ -432,6 +433,130 @@ function _rgbaToHex(rgba) {
     const g = Math.round(rgba.green * 255).toString(16).padStart(2, '0');
     const b = Math.round(rgba.blue * 255).toString(16).padStart(2, '0');
     return `#${r}${g}${b}`;
+}
+
+// ─── Export / Import ────────────────────────────────────────────────────────────
+
+const EXPORT_FORMAT = 'touchsidebar-settings';
+const EXPORT_VERSION = 1;
+const MAX_IMPORT_BYTES = 1024 * 1024;
+const MAX_IMPORT_ACTIONS = 200;
+const ALIGNMENT_IDS = ['top', 'middle', 'bottom'];
+const SAFE_COLOR_RE = /^[#a-zA-Z0-9(),.%\s]+$/;
+const SAFE_ICON_RE = /^[A-Za-z0-9._-]*$/;
+
+// Simple settings: key -> validator returning true when the value is acceptable.
+const SIMPLE_SETTINGS = {
+    'sidebar-on-right':   { type: 'b', valid: v => typeof v === 'boolean' },
+    'show-action-labels': { type: 'b', valid: v => typeof v === 'boolean' },
+    'sidebar-width':      { type: 'i', valid: v => Number.isInteger(v) && v >= 48 && v <= 400 },
+    'icon-padding-top':    { type: 'i', valid: v => Number.isInteger(v) && v >= 0 && v <= 64 },
+    'icon-padding-bottom': { type: 'i', valid: v => Number.isInteger(v) && v >= 0 && v <= 64 },
+    'icon-padding-left':   { type: 'i', valid: v => Number.isInteger(v) && v >= 0 && v <= 64 },
+    'icon-padding-right':  { type: 'i', valid: v => Number.isInteger(v) && v >= 0 && v <= 64 },
+    'button-alignment':   { type: 's', valid: v => ALIGNMENT_IDS.includes(v) },
+    'sidebar-color':      { type: 's', valid: v => typeof v === 'string' && v.length > 0 && v.length <= 64 && SAFE_COLOR_RE.test(v) },
+};
+
+function _boundedString(v, max) {
+    return typeof v === 'string' ? v.slice(0, max) : '';
+}
+
+/** Returns a clean copy of an imported action (only known fields), or null. */
+function _sanitizeAction(a) {
+    if (!a || typeof a !== 'object' || Array.isArray(a))
+        return null;
+    if (!ACTION_TYPES.some(t => t.id === a.type))
+        return null;
+    const size = Number.isFinite(Number(a.size)) ? Math.round(Number(a.size)) : 24;
+    const color = _boundedString(a.iconColor, 64);
+    const icon = _boundedString(a.icon, 128);
+    return {
+        type: a.type,
+        label: _boundedString(a.label, 64),
+        icon: SAFE_ICON_RE.test(icon) ? icon : '',
+        iconColor: color === '' || SAFE_COLOR_RE.test(color) ? color : '',
+        enabled: a.enabled !== false,
+        showWhen: SHOW_WHEN_OPTIONS.some(o => o.id === a.showWhen) ? a.showWhen : 'always',
+        command: _boundedString(a.command, 1024),
+        appId: _boundedString(a.appId, 256),
+        shortcut: _boundedString(a.shortcut, 64),
+        size: Math.max(4, Math.min(400, size)),
+    };
+}
+
+/** Collect every customization into a plain object ready to be serialised. */
+function _collectSettings(settings) {
+    const values = {};
+    for (const [key, meta] of Object.entries(SIMPLE_SETTINGS)) {
+        if (meta.type === 'b') values[key] = settings.get_boolean(key);
+        else if (meta.type === 'i') values[key] = settings.get_int(key);
+        else values[key] = settings.get_string(key);
+    }
+    let actions;
+    try {
+        actions = JSON.parse(settings.get_string('actions'));
+    } catch (_e) {
+        actions = [];
+    }
+    if (!Array.isArray(actions) || actions.length === 0)
+        actions = _defaultActions();
+    values.actions = actions;
+    return { format: EXPORT_FORMAT, version: EXPORT_VERSION, settings: values };
+}
+
+/**
+ * Parse and validate imported text. Returns the clean settings to apply;
+ * throws an Error (message safe to show) when the file is not usable.
+ * Keys that are missing are left unchanged.
+ */
+function _parseImport(text) {
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (_e) {
+        throw new Error(_('The file is not valid JSON text.'));
+    }
+    if (!data || data.format !== EXPORT_FORMAT || typeof data.settings !== 'object' || data.settings === null)
+        throw new Error(_('This is not a TouchSideBar settings file.'));
+    if (data.version !== EXPORT_VERSION)
+        throw new Error(_('Unsupported settings file version.'));
+
+    const clean = {};
+    for (const [key, meta] of Object.entries(SIMPLE_SETTINGS)) {
+        if (!(key in data.settings))
+            continue;
+        if (!meta.valid(data.settings[key]))
+            throw new Error(_('Invalid value for "%s".').replace('%s', key));
+        clean[key] = data.settings[key];
+    }
+    if ('actions' in data.settings) {
+        const list = data.settings.actions;
+        if (!Array.isArray(list) || list.length === 0 || list.length > MAX_IMPORT_ACTIONS)
+            throw new Error(_('Invalid action list.'));
+        const actions = list.map(_sanitizeAction);
+        if (actions.some(a => a === null))
+            throw new Error(_('The action list contains an unknown action type.'));
+        clean.actions = actions;
+    }
+    if (Object.keys(clean).length === 0)
+        throw new Error(_('The file contains no settings.'));
+    return clean;
+}
+
+function _applyImport(settings, clean) {
+    for (const [key, value] of Object.entries(clean)) {
+        if (key === 'actions') settings.set_string('actions', JSON.stringify(value));
+        else if (SIMPLE_SETTINGS[key].type === 'b') settings.set_boolean(key, value);
+        else if (SIMPLE_SETTINGS[key].type === 'i') settings.set_int(key, value);
+        else settings.set_string(key, value);
+    }
+}
+
+function _isDialogDismissed(e) {
+    return e.matches?.(Gtk.DialogError, Gtk.DialogError.DISMISSED) ||
+        e.matches?.(Gtk.DialogError, Gtk.DialogError.CANCELLED) ||
+        e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED);
 }
 
 // ─── Preferences Window ─────────────────────────────────────────────────────────
@@ -700,5 +825,124 @@ export default class TouchSideBarPreferences extends ExtensionPreferences {
         });
         resetRow.add_suffix(resetBtn);
         addGroup.add(resetRow);
+
+        // ═══════════════════════════════════════════════════════
+        // Backup – export / import every customization
+        // ═══════════════════════════════════════════════════════
+        const backupGroup = new Adw.PreferencesGroup({
+            title: _('Backup'),
+            description: _('Export all customizations (layout, appearance and actions) to a text file, or import them from one.'),
+        });
+        generalPage.add(backupGroup);
+
+        const toast = message => window.add_toast(new Adw.Toast({ title: message }));
+
+        const exportRow = new Adw.ActionRow({ title: _('Export Settings') });
+        const exportBtn = new Gtk.Button({ label: _('Export…'), valign: Gtk.Align.CENTER });
+        exportBtn.connect('clicked', () => {
+            const dialog = new Gtk.FileDialog({
+                title: _('Export settings'),
+                initial_name: 'touchsidebar-settings.json',
+            });
+            dialog.save(window, null, (_d, res) => {
+                let file;
+                try {
+                    file = dialog.save_finish(res);
+                } catch (e) {
+                    if (!_isDialogDismissed(e)) {
+                        console.error('TouchSideBar: export dialog failed', e);
+                        toast(_('Could not export settings.'));
+                    }
+                    return;
+                }
+                try {
+                    const text = JSON.stringify(_collectSettings(settings), null, 2) + '\n';
+                    file.replace_contents(new TextEncoder().encode(text), null, false,
+                        Gio.FileCreateFlags.REPLACE_DESTINATION, null);
+                    toast(_('Settings exported.'));
+                } catch (e) {
+                    console.error('TouchSideBar: export failed', e);
+                    toast(_('Could not export settings.'));
+                }
+            });
+        });
+        exportRow.add_suffix(exportBtn);
+        backupGroup.add(exportRow);
+
+        const reloadWindow = () => {
+            window.remove(generalPage);
+            window.remove(actionsPage);
+            this.fillPreferencesWindow(window);
+        };
+
+        const importFile = file => {
+            let clean;
+            try {
+                const info = file.query_info('standard::size', Gio.FileQueryInfoFlags.NONE, null);
+                if (info.get_size() > MAX_IMPORT_BYTES)
+                    throw new Error(_('The file is too large.'));
+                const [, bytes] = file.load_contents(null);
+                clean = _parseImport(new TextDecoder('utf-8').decode(bytes));
+            } catch (e) {
+                console.error('TouchSideBar: import rejected', e);
+                toast(e.message || _('Could not read the file.'));
+                return;
+            }
+
+            const apply = () => {
+                _applyImport(settings, clean);
+                reloadWindow();
+                window.add_toast(new Adw.Toast({ title: _('Settings imported.') }));
+            };
+
+            // Imported actions may run shell commands: ask before applying them.
+            const commandCount = (clean.actions ?? []).filter(a =>
+                (a.type === 'terminal-command' || a.type === 'system-command') && a.command !== '').length;
+            if (commandCount === 0) {
+                apply();
+                return;
+            }
+            const confirm = new Adw.MessageDialog({
+                transient_for: window,
+                modal: true,
+                heading: _('Import settings?'),
+                body: _('This file contains %d action(s) that run shell commands as your user. Only import files you trust.')
+                    .replace('%d', String(commandCount)),
+            });
+            confirm.add_response('cancel', _('Cancel'));
+            confirm.add_response('import', _('Import'));
+            confirm.set_response_appearance('import', Adw.ResponseAppearance.DESTRUCTIVE);
+            confirm.set_default_response('cancel');
+            confirm.set_close_response('cancel');
+            confirm.connect('response', (_dlg, id) => {
+                if (id === 'import')
+                    apply();
+            });
+            confirm.present();
+        };
+
+        const importRow = new Adw.ActionRow({
+            title: _('Import Settings'),
+            subtitle: _('Replaces the current customizations contained in the file'),
+        });
+        const importBtn = new Gtk.Button({ label: _('Import…'), valign: Gtk.Align.CENTER });
+        importBtn.connect('clicked', () => {
+            const dialog = new Gtk.FileDialog({ title: _('Import settings') });
+            dialog.open(window, null, (_d, res) => {
+                let file;
+                try {
+                    file = dialog.open_finish(res);
+                } catch (e) {
+                    if (!_isDialogDismissed(e)) {
+                        console.error('TouchSideBar: import dialog failed', e);
+                        toast(_('Could not open the file.'));
+                    }
+                    return;
+                }
+                importFile(file);
+            });
+        });
+        importRow.add_suffix(importBtn);
+        backupGroup.add(importRow);
     }
 }
