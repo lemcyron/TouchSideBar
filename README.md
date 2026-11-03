@@ -6,6 +6,16 @@ inconvenient.
 
 ---
 
+## Demo
+
+<video src="media/TouchSideBarDemo.mp4" controls muted width="720">
+  Your viewer does not support embedded video.
+</video>
+
+If the video does not play here, [watch the demo](media/TouchSideBarDemo.mp4).
+
+---
+
 ## Features
 
 | Feature | Detail |
