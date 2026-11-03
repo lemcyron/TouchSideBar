@@ -49,6 +49,31 @@ const ACTION_TYPES = [
     { id: 'separator',       label: 'Horizontal Line',        icon: '' },
 ];
 
+// Selectable icons shown in the icon picker popup
+const ICON_CHOICES = [
+    'go-previous-symbolic', 'go-next-symbolic', 'go-up-symbolic', 'go-down-symbolic',
+    'go-home-symbolic', 'view-grid-symbolic', 'view-fullscreen-symbolic', 'view-restore-symbolic',
+    'view-sidebar-symbolic', 'view-refresh-symbolic', 'window-close-symbolic', 'window-new-symbolic',
+    'media-playback-start-symbolic', 'media-playback-pause-symbolic', 'media-playback-stop-symbolic',
+    'media-skip-forward-symbolic', 'media-skip-backward-symbolic', 'media-seek-forward-symbolic',
+    'media-seek-backward-symbolic', 'media-record-symbolic', 'media-eject-symbolic',
+    'audio-volume-high-symbolic', 'audio-volume-medium-symbolic', 'audio-volume-low-symbolic',
+    'audio-volume-muted-symbolic', 'microphone-sensitivity-high-symbolic',
+    'system-shutdown-symbolic', 'system-reboot-symbolic', 'weather-clear-night-symbolic',
+    'system-log-out-symbolic', 'system-lock-screen-symbolic', 'system-run-symbolic',
+    'system-search-symbolic', 'preferences-system-symbolic', 'utilities-terminal-symbolic',
+    'edit-copy-symbolic', 'edit-paste-symbolic', 'edit-cut-symbolic', 'edit-undo-symbolic',
+    'edit-redo-symbolic', 'edit-delete-symbolic', 'edit-find-symbolic', 'edit-select-all-symbolic',
+    'document-save-symbolic', 'document-open-symbolic', 'document-new-symbolic',
+    'folder-symbolic', 'user-home-symbolic', 'input-keyboard-symbolic', 'input-mouse-symbolic',
+    'application-x-executable-symbolic', 'applications-system-symbolic', 'web-browser-symbolic',
+    'camera-photo-symbolic', 'camera-video-symbolic', 'accessories-screenshot-symbolic',
+    'display-brightness-symbolic', 'night-light-symbolic', 'network-wireless-symbolic',
+    'bluetooth-active-symbolic', 'airplane-mode-symbolic', 'battery-full-symbolic',
+    'emblem-favorite-symbolic', 'starred-symbolic', 'list-add-symbolic', 'list-remove-symbolic',
+    'zoom-in-symbolic', 'zoom-out-symbolic', 'dialog-information-symbolic', 'dialog-warning-symbolic',
+];
+
 function _defaultActions() {
     return [
         { type: 'prev-workspace',  label: 'Prev WS',    icon: 'go-previous-symbolic',         iconColor: '', enabled: true },
@@ -113,13 +138,28 @@ const ActionRow = GObject.registerClass({
             this.emit('changed');
         });
 
-        // ── Icon Name ─────────────────────────────────────────
-        const iconRow = new Adw.EntryRow({ title: _('Icon Name (symbolic)') });
-        iconRow.set_text(this._action.icon || '');
-        iconRow.connect('notify::text', () => {
-            this._action.icon = iconRow.get_text();
-            this.emit('changed');
+        // ── Icon (popup picker with previews) ─────────────────
+        const iconRow = new Adw.ActionRow({ title: _('Icon') });
+        const setIcon = (name, notify = true) => {
+            this._action.icon = name;
+            iconRow.set_subtitle(name || _('None'));
+            iconPreview.set_from_icon_name(name || null);
+            if (notify)
+                this.emit('changed');
+        };
+        const iconPreview = new Gtk.Image({ pixel_size: 24 });
+        const iconMenuBtn = new Gtk.MenuButton({
+            valign: Gtk.Align.CENTER,
+            tooltip_text: _('Choose icon'),
+            popover: this._buildIconPopover(name => setIcon(name)),
         });
+        const iconBtnBox = new Gtk.Box({ spacing: 8 });
+        iconBtnBox.append(iconPreview);
+        iconBtnBox.append(new Gtk.Image({ icon_name: 'pan-down-symbolic' }));
+        iconMenuBtn.set_child(iconBtnBox);
+        iconRow.add_suffix(iconMenuBtn);
+        iconRow.set_activatable_widget(iconMenuBtn);
+        setIcon(this._action.icon || '', false);
 
         // ── Action Type ───────────────────────────────────────
         const typeRow = new Adw.ComboRow({ title: _('Action Type') });
@@ -132,10 +172,8 @@ const ActionRow = GObject.registerClass({
             const idx = typeRow.get_selected();
             this._action.type = ACTION_TYPES[idx]?.id || 'overview';
             // Auto-fill icon if empty
-            if (!this._action.icon || this._action.icon === '') {
-                this._action.icon = ACTION_TYPES[idx]?.icon || '';
-                iconRow.set_text(this._action.icon);
-            }
+            if (!this._action.icon || this._action.icon === '')
+                setIcon(ACTION_TYPES[idx]?.icon || '', false);
             this.set_title(_actionSummary(this._action));
             this.emit('changed');
         });
@@ -227,6 +265,95 @@ const ActionRow = GObject.registerClass({
         removeBtn.connect('clicked', () => this.emit('removed'));
         actionsBar.add_suffix(removeBtn);
         this.add_row(actionsBar);
+    }
+
+    /**
+     * Build a popover with a searchable grid of icons, each shown with a
+     * preview and its name. Calls onSelect(iconName) when one is picked.
+     */
+    _buildIconPopover(onSelect) {
+        const popover = new Gtk.Popover();
+
+        const content = new Gtk.Box({
+            orientation: Gtk.Orientation.VERTICAL,
+            spacing: 6,
+            margin_top: 6,
+            margin_bottom: 6,
+            margin_start: 6,
+            margin_end: 6,
+        });
+
+        const search = new Gtk.SearchEntry({
+            placeholder_text: _('Search icons…'),
+        });
+        content.append(search);
+
+        const flow = new Gtk.FlowBox({
+            selection_mode: Gtk.SelectionMode.NONE,
+            homogeneous: true,
+            min_children_per_line: 3,
+            max_children_per_line: 4,
+            row_spacing: 4,
+            column_spacing: 4,
+        });
+
+        ICON_CHOICES.forEach(name => {
+            const box = new Gtk.Box({
+                orientation: Gtk.Orientation.VERTICAL,
+                spacing: 4,
+                margin_top: 6,
+                margin_bottom: 6,
+                margin_start: 4,
+                margin_end: 4,
+            });
+            box.append(new Gtk.Image({ icon_name: name, pixel_size: 32 }));
+            box.append(new Gtk.Label({
+                label: name.replace(/-symbolic$/, ''),
+                css_classes: ['caption'],
+                ellipsize: 3, // Pango.EllipsizeMode.END
+                max_width_chars: 14,
+            }));
+            const btn = new Gtk.Button({
+                child: box,
+                css_classes: ['flat'],
+                tooltip_text: name,
+            });
+            btn.connect('clicked', () => {
+                onSelect(name);
+                popover.popdown();
+            });
+            flow.append(btn);
+        });
+
+        flow.set_filter_func(child => {
+            const q = search.get_text().trim().toLowerCase();
+            return q === '' || ICON_CHOICES[child.get_index()].includes(q);
+        });
+        search.connect('search-changed', () => flow.invalidate_filter());
+        // Enter with a query matching no listed icon uses it as a custom icon name
+        search.connect('activate', () => {
+            const q = search.get_text().trim();
+            if (q === '' || ICON_CHOICES.some(n => n.includes(q.toLowerCase())))
+                return;
+            onSelect(q);
+            popover.popdown();
+        });
+
+        const scrolled = new Gtk.ScrolledWindow({
+            hscrollbar_policy: Gtk.PolicyType.NEVER,
+            min_content_width: 380,
+            min_content_height: 320,
+            max_content_height: 320,
+        });
+        scrolled.set_child(flow);
+        content.append(scrolled);
+        popover.set_child(content);
+
+        popover.connect('closed', () => {
+            search.set_text('');
+        });
+
+        return popover;
     }
 
     setupDragAndDrop(index, onReorder) {

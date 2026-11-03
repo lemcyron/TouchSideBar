@@ -56,9 +56,10 @@
 }
 
 /* ── Icons inside buttons ─────────────────────────────────────── */
+/* icon-size is set from JS (scaled to the sidebar width); a CSS value here
+   would override it. */
 .touch-sidebar-icon {
     color: rgba(220, 220, 220, 0.95);
-    icon-size: 28px;
 }
 
 /* ── Button label ─────────────────────────────────────────────── */

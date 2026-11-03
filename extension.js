@@ -8,6 +8,7 @@
 
 import GObject from 'gi://GObject';
 import St from 'gi://St';
+import Pango from 'gi://Pango';
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -23,6 +24,28 @@ import { Extension, gettext as _ } from 'resource:///org/gnome/shell/extensions/
 const SCHEMA_KEY = 'org.gnome.shell.extensions.touchsidebar';
 const SIDEBAR_MIN_WIDTH = 48;
 const SIDEBAR_MAX_WIDTH = 400;
+const LONG_PRESS_MS = 500; // panel icon long-press duration
+
+// Horizontal space the sidebar chrome takes around the buttons
+// (container padding + button-box padding + borders, see stylesheet.css).
+const SIDEBAR_CHROME_X = 14;
+
+/**
+ * Derive button/icon/label sizes from the sidebar width so the content
+ * scales with it. Tuned so the default width (80 px) gives the stock
+ * look: 28 px icon, 10 px label, 10/6 px button padding.
+ */
+function scaleMetrics(sidebarWidth) {
+    const available = Math.max(16, sidebarWidth - SIDEBAR_CHROME_X);
+    const iconSize = Math.max(16, Math.min(128, Math.round(available * 0.42)));
+    return {
+        iconSize,
+        fontSize: Math.max(8, Math.min(28, Math.round(iconSize * 0.36))),
+        padX: Math.max(2, Math.round(iconSize * 0.21)),
+        padY: Math.max(6, Math.round(iconSize * 0.36)),
+        radius: Math.max(6, Math.round(iconSize * 0.36)),
+    };
+}
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
@@ -350,7 +373,7 @@ function executeAction(action, extensionObject) {
 
 const TouchActionButton = GObject.registerClass(
 class TouchActionButton extends St.Button {
-    _init(action, extensionObject, showLabel = true) {
+    _init(action, extensionObject, showLabel = true, metrics = scaleMetrics(80)) {
         super._init({
             style_class: 'touch-sidebar-btn',
             // Must not take key focus: the target app window has to stay
@@ -365,10 +388,22 @@ class TouchActionButton extends St.Button {
         this._action = action;
         this._ext = extensionObject;
 
-        const box = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_align: Clutter.ActorAlign.CENTER });
+        // Scale the button with the sidebar width. min-width is released so
+        // narrow sidebars can shrink the button below the stylesheet default.
+        this.set_style(
+            `min-width: 0; padding: ${metrics.padY}px ${metrics.padX}px; ` +
+            `border-radius: ${metrics.radius}px;`
+        );
+
+        const box = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
+        });
 
         const iconName = action.icon || _defaultIconForType(action.type);
-        const icon = makeIcon(iconName, action.iconColor || '', 28);
+        const icon = makeIcon(iconName, action.iconColor || '', metrics.iconSize);
+        icon.x_align = Clutter.ActorAlign.CENTER;
         box.add_child(icon);
 
         if (showLabel && action.label && action.label.trim() !== '') {
@@ -377,8 +412,11 @@ class TouchActionButton extends St.Button {
                 style_class: 'touch-sidebar-btn-label',
                 x_align: Clutter.ActorAlign.CENTER,
             });
-            if (action.iconColor && action.iconColor !== '')
-                label.set_style(`color: ${action.iconColor};`);
+            label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+            label.set_style(
+                `font-size: ${metrics.fontSize}px;` +
+                (action.iconColor && action.iconColor !== '' ? ` color: ${action.iconColor};` : '')
+            );
             box.add_child(label);
         }
 
@@ -605,6 +643,7 @@ class TouchSideBar extends St.BoxLayout {
         }
 
         const showLabels = this._settings.get_boolean('show-action-labels');
+        const metrics = scaleMetrics(this._currentWidth);
 
         for (const action of actions) {
             if (!action.enabled && action.enabled !== undefined) continue;
@@ -630,7 +669,7 @@ class TouchSideBar extends St.BoxLayout {
                 continue;
             }
 
-            const btn = new TouchActionButton(action, this._ext, showLabels);
+            const btn = new TouchActionButton(action, this._ext, showLabels, metrics);
             this._buttonBox.add_child(btn);
         }
     }
@@ -779,15 +818,16 @@ class TouchSideBarIndicator extends PanelMenu.Button {
         // The menu below is opened with a secondary (right) click.
 
         // ── Switch side ───────────────────────────────────────
-        const switchSide = new PopupMenu.PopupMenuItem(
-            settings.get_boolean('sidebar-on-right') ? _('Move to Left') : _('Move to Right')
-        );
-        switchSide.connect('activate', () => {
-            const onRight = settings.get_boolean('sidebar-on-right');
-            settings.set_boolean('sidebar-on-right', !onRight);
-            switchSide.label.set_text(!onRight ? _('Move to Left') : _('Move to Right'));
-        });
+        // A long press on the panel icon does the same (see vfunc_event).
+        const switchSide = new PopupMenu.PopupMenuItem('');
+        const updateSwitchLabel = () => {
+            switchSide.label.set_text(
+                settings.get_boolean('sidebar-on-right') ? _('Move to Left') : _('Move to Right'));
+        };
+        updateSwitchLabel();
+        switchSide.connect('activate', () => this._toggleSide());
         this.menu.addMenuItem(switchSide);
+        this._sideChangedId = settings.connect('changed::sidebar-on-right', updateSwitchLabel);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
@@ -799,26 +839,85 @@ class TouchSideBarIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(prefsItem);
     }
 
+    _toggleSide() {
+        this._settings.set_boolean('sidebar-on-right', !this._settings.get_boolean('sidebar-on-right'));
+    }
+
+    // Press starts a long-press timer. Releasing before it fires is a tap
+    // (toggle visibility); if it fires, the sidebar switches sides instead.
+    _startPress() {
+        this._cancelPress();
+        this._longPressFired = false;
+        this._pressActive = true;
+        this._longPressId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, LONG_PRESS_MS, () => {
+            this._longPressId = 0;
+            this._longPressFired = true;
+            this._toggleSide();
+            return GLib.SOURCE_REMOVE;
+        });
+        GLib.Source.set_name_by_id(this._longPressId, '[touchsidebar] long press');
+    }
+
+    _endPress(cancelled = false) {
+        if (!this._pressActive)
+            return;
+        this._pressActive = false;
+        const fired = this._longPressFired;
+        this._cancelPress();
+        if (!fired && !cancelled)
+            this._sidebar.toggleVisibility();
+    }
+
+    _cancelPress() {
+        if (this._longPressId) {
+            GLib.source_remove(this._longPressId);
+            this._longPressId = 0;
+        }
+    }
+
     vfunc_event(event) {
         const type = event.type();
         if (type === Clutter.EventType.BUTTON_PRESS) {
-            // Touch taps are handled via TOUCH_BEGIN; skip the emulated duplicate.
+            // Touch is handled via TOUCH_* events; skip the emulated duplicates.
             if (event.get_flags() & Clutter.EventFlags.POINTER_EMULATED)
                 return Clutter.EVENT_STOP;
             if (event.get_button() === Clutter.BUTTON_SECONDARY) {
                 this.menu.toggle();
             } else {
                 this.menu.close();
-                this._sidebar.toggleVisibility();
+                this._startPress();
             }
+            return Clutter.EVENT_STOP;
+        }
+        if (type === Clutter.EventType.BUTTON_RELEASE) {
+            if (event.get_flags() & Clutter.EventFlags.POINTER_EMULATED)
+                return Clutter.EVENT_STOP;
+            this._endPress();
             return Clutter.EVENT_STOP;
         }
         if (type === Clutter.EventType.TOUCH_BEGIN) {
             this.menu.close();
-            this._sidebar.toggleVisibility();
+            this._startPress();
+            return Clutter.EVENT_STOP;
+        }
+        if (type === Clutter.EventType.TOUCH_END) {
+            this._endPress();
+            return Clutter.EVENT_STOP;
+        }
+        if (type === Clutter.EventType.TOUCH_CANCEL) {
+            this._endPress(true);
             return Clutter.EVENT_STOP;
         }
         return Clutter.EVENT_PROPAGATE;
+    }
+
+    destroy() {
+        this._cancelPress();
+        if (this._sideChangedId) {
+            this._settings.disconnect(this._sideChangedId);
+            this._sideChangedId = null;
+        }
+        super.destroy();
     }
 
     setExtension(ext) {
@@ -1023,6 +1122,33 @@ export default class TouchSideBarExtension extends Extension {
         }
     }
 
+    // ── Any-app fullscreen (e.g. a video player) ──────────────────────────────
+    // The sidebar is not tracked as fullscreen-aware chrome, so it would stay
+    // on top of (and reserve space beside) a fullscreen window. Hide it while
+    // the primary monitor is in fullscreen and bring it back afterwards.
+    // Sidebar-driven fullscreen (_fsWindow) manages the sidebar itself.
+
+    _syncAppFullscreen() {
+        if (!this._sidebar || this._fsWindow)
+            return;
+        const inFs = !!Main.layoutManager.primaryMonitor?.inFullscreen;
+
+        if (inFs && !this._appFsActive) {
+            this._appFsActive = true;
+            this._appFsRestore = this._sidebar.isShown;
+            this._sidebar._hideSidebar();
+            this._sidebar.setSuppressed(true);
+            this._swipeZone?.hide();
+        } else if (!inFs && this._appFsActive) {
+            this._appFsActive = false;
+            this._swipeZone?.show();
+            this._sidebar.setSuppressed(false);
+            if (this._appFsRestore)
+                this._sidebar._showSidebar();
+            this._appFsRestore = false;
+        }
+    }
+
     // ── Touch / tablet mode ───────────────────────────────────────────────────
     // mutter flips the seat's `touch-mode` when the device is folded into tablet
     // mode (or is used with only a touchscreen).
@@ -1062,6 +1188,12 @@ export default class TouchSideBarExtension extends Extension {
             this._swipeZone._reposition();
         });
 
+        // ── Hide the sidebar while any app is fullscreen ──────
+        this._appFsActive = false;
+        this._appFsRestore = false;
+        this._fullscreenChangedId = Main.layoutManager.connect(
+            'in-fullscreen-changed', () => this._syncAppFullscreen());
+
         // ── Floating "exit fullscreen" button ─────────────────
         this._fsExitButton = new FullscreenExitButton(() => this._exitSidebarFullscreen());
         Main.layoutManager.addChrome(this._fsExitButton, {
@@ -1080,6 +1212,8 @@ export default class TouchSideBarExtension extends Extension {
         this._indicator = new TouchSideBarIndicator(this._sidebar, this._settings);
         this._indicator.setExtension(this);
         Main.panel.addToStatusArea('touchsidebar', this._indicator);
+
+        this._syncAppFullscreen();
 
         // ── Reposition on monitor change ──────────────────────
         this._monitorsChangedId = Main.layoutManager.connect(
@@ -1106,6 +1240,12 @@ export default class TouchSideBarExtension extends Extension {
             this._fsExitButton.destroy();
             this._fsExitButton = null;
         }
+        if (this._fullscreenChangedId) {
+            Main.layoutManager.disconnect(this._fullscreenChangedId);
+            this._fullscreenChangedId = null;
+        }
+        this._appFsActive = false;
+        this._appFsRestore = false;
         if (this._monitorsChangedId) {
             Main.layoutManager.disconnect(this._monitorsChangedId);
             this._monitorsChangedId = null;
