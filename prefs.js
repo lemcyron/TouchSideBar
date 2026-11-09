@@ -148,7 +148,18 @@ const ActionRow = GObject.registerClass({
         const setIcon = (name, notify = true) => {
             this._action.icon = name;
             iconRow.set_subtitle(name || _('None'));
-            iconPreview.set_from_icon_name(name || null);
+            const effectiveIcon = (name && name.trim() !== '')
+                ? name.trim()
+                : (ACTION_TYPES.find(t => t.id === this._action.type)?.icon || '');
+            if (effectiveIcon) {
+                try {
+                    iconPreview.set_from_gicon(Gio.ThemedIcon.new_with_default_fallbacks(effectiveIcon));
+                } catch (_e) {
+                    iconPreview.set_from_icon_name(effectiveIcon);
+                }
+            } else {
+                iconPreview.clear();
+            }
             if (notify)
                 this.emit('changed');
         };
@@ -441,7 +452,7 @@ const MAX_IMPORT_BYTES = 1024 * 1024;
 const MAX_IMPORT_ACTIONS = 200;
 const ALIGNMENT_IDS = ['top', 'middle', 'bottom'];
 const SAFE_COLOR_RE = /^[#a-zA-Z0-9(),.%\s]+$/;
-const SAFE_ICON_RE = /^[A-Za-z0-9._-]*$/;
+const SAFE_ICON_RE = /^[A-Za-z0-9._\-\/:]*$/;
 
 // Simple settings: key -> validator returning true when the value is acceptable.
 const SIMPLE_SETTINGS = {

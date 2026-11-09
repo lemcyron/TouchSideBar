@@ -92,13 +92,39 @@ function getSeat() {
  * Create a themed icon, falling back to a symbolic name.
  */
 function makeIcon(iconName, iconColor, iconSize = 24) {
-    const icon = new St.Icon({
-        icon_name: iconName || 'application-x-executable-symbolic',
+    const name = (iconName && typeof iconName === 'string' && iconName.trim() !== '')
+        ? iconName.trim()
+        : 'application-x-executable-symbolic';
+
+    let gicon = null;
+    try {
+        if (name.startsWith('/') || name.startsWith('file://')) {
+            const file = name.startsWith('file://')
+                ? Gio.File.new_for_uri(name)
+                : Gio.File.new_for_path(name);
+            if (file.query_exists(null))
+                gicon = new Gio.FileIcon({ file });
+        }
+        if (!gicon) {
+            gicon = Gio.ThemedIcon.new_with_default_fallbacks(name);
+        }
+    } catch (_e) {
+        gicon = null;
+    }
+
+    const iconProps = {
         icon_size: iconSize,
         style_class: 'touch-sidebar-icon',
-    });
-    if (iconColor && iconColor !== '') {
-        icon.set_style(`color: ${iconColor};`);
+        fallback_icon_name: 'application-x-executable-symbolic',
+    };
+    if (gicon)
+        iconProps.gicon = gicon;
+    else
+        iconProps.icon_name = name;
+
+    const icon = new St.Icon(iconProps);
+    if (iconColor && typeof iconColor === 'string' && iconColor.trim() !== '' && isSafeCssColor(iconColor.trim())) {
+        icon.set_style(`color: ${iconColor.trim()};`);
     }
     return icon;
 }
@@ -405,8 +431,34 @@ class TouchActionButton extends St.Button {
             x_expand: true,
         });
 
-        const iconName = action.icon || _defaultIconForType(action.type);
-        const icon = makeIcon(iconName, action.iconColor || '', metrics.iconSize);
+        const iconName = (action.icon && typeof action.icon === 'string' && action.icon.trim() !== '')
+            ? action.icon.trim()
+            : _defaultIconForType(action.type);
+
+        let icon = null;
+        if (action.type === 'app-shortcut' && action.appId && (!action.icon || action.icon.trim() === '')) {
+            try {
+                const app = Shell.AppSystem.get_default().lookup_app(action.appId);
+                const appIcon = app?.get_app_info()?.get_icon?.();
+                if (appIcon) {
+                    icon = new St.Icon({
+                        gicon: appIcon,
+                        icon_size: metrics.iconSize,
+                        style_class: 'touch-sidebar-icon',
+                        fallback_icon_name: 'application-x-executable-symbolic',
+                    });
+                    if (action.iconColor && typeof action.iconColor === 'string' && action.iconColor.trim() !== '' && isSafeCssColor(action.iconColor.trim()))
+                        icon.set_style(`color: ${action.iconColor.trim()};`);
+                }
+            } catch (_e) {
+                icon = null;
+            }
+        }
+
+        if (!icon) {
+            icon = makeIcon(iconName, action.iconColor || '', metrics.iconSize);
+        }
+
         icon.x_align = Clutter.ActorAlign.CENTER;
         box.add_child(icon);
 
@@ -419,7 +471,7 @@ class TouchActionButton extends St.Button {
             label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
             label.set_style(
                 `font-size: ${metrics.fontSize}px;` +
-                (action.iconColor && action.iconColor !== '' ? ` color: ${action.iconColor};` : '')
+                (action.iconColor && typeof action.iconColor === 'string' && action.iconColor.trim() !== '' && isSafeCssColor(action.iconColor.trim()) ? ` color: ${action.iconColor.trim()};` : '')
             );
             box.add_child(label);
         }
@@ -786,7 +838,8 @@ class TouchSideBar extends St.BoxLayout {
     }
 
     _showSidebar() {
-        if (this._visible || this._suppressed) return;
+        if (this._suppressed) return;
+        if (this._visible && this.visible && this.opacity === 255) return;
         this._visible = true;
         this._positionSidebar();
         this.show();
@@ -845,11 +898,14 @@ class TouchSideBarIndicator extends PanelMenu.Button {
 
         // Page-with-a-list icon shipped with the extension; falls back to a
         // themed icon if the file is missing.
-        const icon = new St.Icon({ style_class: 'system-status-icon' });
-        if (iconFile.query_exists(null))
+        const icon = new St.Icon({
+            style_class: 'system-status-icon',
+            fallback_icon_name: 'view-list-symbolic',
+        });
+        if (iconFile && typeof iconFile.query_exists === 'function' && iconFile.query_exists(null))
             icon.gicon = new Gio.FileIcon({ file: iconFile });
         else
-            icon.icon_name = 'view-list-symbolic';
+            icon.gicon = Gio.ThemedIcon.new_with_default_fallbacks('view-list-symbolic');
         this.add_child(icon);
 
         // Primary click / tap toggles the sidebar immediately (see vfunc_event).
@@ -1162,7 +1218,8 @@ export default class TouchSideBarExtension extends Extension {
         this._swipeZone?.show();
         if (this._sidebar) {
             this._sidebar.setSuppressed(false);
-            if (this._fsRestoreSidebar)
+            const isTouchActive = Boolean((this._seat || getSeat())?.touch_mode);
+            if (this._fsRestoreSidebar || isTouchActive)
                 this._sidebar._showSidebar();
         }
     }
@@ -1176,7 +1233,8 @@ export default class TouchSideBarExtension extends Extension {
     _syncAppFullscreen() {
         if (!this._sidebar || this._fsWindow)
             return;
-        const inFs = global.display.get_monitor_in_fullscreen(Main.layoutManager.primaryIndex);
+        const primaryIdx = Main.layoutManager.primaryIndex ?? 0;
+        const inFs = primaryIdx >= 0 && global.display.get_monitor_in_fullscreen(primaryIdx);
 
         if (inFs && !this._appFsActive) {
             this._appFsActive = true;
@@ -1188,7 +1246,8 @@ export default class TouchSideBarExtension extends Extension {
             this._appFsActive = false;
             this._swipeZone?.show();
             this._sidebar.setSuppressed(false);
-            if (this._appFsRestore)
+            const isTouchActive = Boolean((this._seat || getSeat())?.touch_mode);
+            if (this._appFsRestore || isTouchActive)
                 this._sidebar._showSidebar();
             this._appFsRestore = false;
         }
@@ -1201,10 +1260,12 @@ export default class TouchSideBarExtension extends Extension {
     _syncTouchMode() {
         if (!this._seat || !this._sidebar)
             return;
-        if (this._seat.touch_mode)
-            this._sidebar._showSidebar();
-        else
+        if (this._seat.touch_mode) {
+            if (!this._appFsActive && !this._fsWindow)
+                this._sidebar._showSidebar();
+        } else {
             this._sidebar._hideSidebar();
+        }
     }
 
     enable() {

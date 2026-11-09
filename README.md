@@ -8,7 +8,11 @@ inconvenient.
 
 ## Demo
 
-Watch the demo here: https://youtu.be/yqeTa84F-Ok.
+<video src="media/TouchSideBarDemo.mp4" controls muted width="720">
+  Your viewer does not support embedded video.
+</video>
+
+If the video does not play here, [watch the demo](media/TouchSideBarDemo.mp4).
 
 ---
 
